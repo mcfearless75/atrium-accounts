@@ -8,6 +8,7 @@ A single-file, zero-dependency, fully client-side JSON inspection webapp for dat
 
 - **Load any way you like** — paste, **Upload** button, or **drag-and-drop a .json file anywhere on the window**. Malformed input? **Attempt repair** fixes what QA actually pastes: single quotes, unquoted keys, trailing commas, comments, smart quotes, Python `True`/`False`/`None`, `NaN`/`Infinity`, JSONP wrappers and NDJSON/JSONL — and flags the repair as a finding, because a producer emitting broken JSON is itself a defect.
 - **Tree explorer** — collapsible payload tree with search (keys, paths, values; Enter cycles matches), clickable path links everywhere, node/size stats, and **click-to-copy**: click any key to copy its dot-path, any value to copy the value (mask-aware).
+- **Beautify / Minify / Sort** — copy formatted (2-space; Alt-click 4-space) or minified JSON, Shift-click to download instead; **A→Z** toggles sorted keys in the tree and the emitted output. Both outputs respect the PII mask.
 - **Quality engine** — 14 built-in detectors for the defects that actually break decisioning:
   inconsistent key spellings, duplicate concepts (`dob` + `dateOfBirth`), mixed types per key,
   booleans/numbers stored as strings, legacy Y/N flags, mixed date/timestamp formats,

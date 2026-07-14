@@ -230,6 +230,9 @@ details.schemaWrap summary{cursor:pointer;color:var(--accent);font-size:12.5px;m
     <div class="paneHead">
       <input id="search" type="text" placeholder="Search keys, paths or values… (Enter = next match)" aria-label="Search payload">
       <span id="searchInfo"></span>
+      <button id="btnPretty" title="Copy formatted JSON (2-space indent). Shift-click to download. Alt-click for 4-space indent.">Beautify</button>
+      <button id="btnMinify" title="Copy minified JSON. Shift-click to download.">Minify</button>
+      <button id="btnSort" aria-pressed="false" title="Sort object keys A→Z in the tree and in Beautify/Minify output (key order is not semantic in JSON)">A→Z</button>
     </div>
     <div id="tree" tabindex="0"></div>
   </section>
@@ -295,6 +298,7 @@ var RULE_HITS=new Map();    // rule name -> hit count from last analyse
 var SEARCH_HITS=[], SEARCH_IX=-1;
 var RULES_LS_KEY='jsonxray_rules_v1';
 var REPAIR_NOTES=[];        // what the last auto-repair changed (surfaced as an info finding)
+var SORT=false;             // sort object keys A→Z in tree + beautify/minify output
 
 var $=function(id){return document.getElementById(id);};
 
@@ -993,6 +997,7 @@ function buildNode(v,segs,depth,keyLabel){
       for(var i=0;i<v.length;i++)kc.appendChild(buildNode(v[i],segs.concat(i),depth+1,i));
     }else{
       var ks=Object.keys(v);
+      if(SORT)ks.sort();
       for(var j=0;j<ks.length;j++)kc.appendChild(buildNode(v[ks[j]],segs.concat(ks[j]),depth+1,ks[j]));
     }
     wrap.appendChild(kc);
@@ -1452,6 +1457,46 @@ $('btnReport').addEventListener('click',function(){
   }
   L.push('');
   download('json-xray-report.md',L.join('\n'),'text/markdown');
+});
+
+/* ---------------- beautify / minify / sort ---------------- */
+function sortDeep(v){
+  var t=typeOf(v);
+  if(t==='array')return v.map(sortDeep);
+  if(t==='object'){
+    var o={};
+    Object.keys(v).sort().forEach(function(k){o[k]=sortDeep(v[k]);});
+    return o;
+  }
+  return v;
+}
+function maskDeep(v,segs){
+  var t=typeOf(v);
+  if(t==='array')return v.map(function(c,i){return maskDeep(c,segs.concat(i));});
+  if(t==='object'){
+    var o={};
+    Object.keys(v).forEach(function(k){o[k]=maskDeep(v[k],segs.concat(k));});
+    return o;
+  }
+  return _piiset.has(dotPath(segs))?'••••••':v;
+}
+function emitJSON(pretty,e){
+  if(!ROOT)return;
+  var src=MASK?maskDeep(ROOT,[]):ROOT;
+  if(SORT)src=sortDeep(src);
+  var txt=pretty?JSON.stringify(src,null,e.altKey?4:2):JSON.stringify(src);
+  var label=(pretty?'Formatted':'Minified')+' JSON ('+fmtBytes(txt.length)+')'+(MASK?', PII masked':'');
+  if(e.shiftKey)download(pretty?'payload-pretty.json':'payload.min.json',txt,'application/json');
+  else copyText(txt,label+' copied');
+}
+$('btnPretty').addEventListener('click',function(e){emitJSON(true,e);});
+$('btnMinify').addEventListener('click',function(e){emitJSON(false,e);});
+$('btnSort').addEventListener('click',function(){
+  SORT=!SORT;
+  this.classList.toggle('on',SORT);
+  this.setAttribute('aria-pressed',String(SORT));
+  renderTree();
+  toast(SORT?'Keys sorted A→Z (view + output only — the payload itself is untouched)':'Original key order restored');
 });
 
 /* ---------------- mask toggle ---------------- */

@@ -95,6 +95,9 @@ Header "Upload" button and whole-window drag-and-drop (`loadFromFile`, `#dropVei
 ### ✅ JSONPath query box (was a nice-to-have)
 "Query" tab — `runQuery()`/`tokenizeQuery()` subset: `$.key`, `["key"]`, `[n]`/`[-n]`, `[*]`/`.*`, `..key` deep scan, `[?(@.path)]`, `[?(@.path op literal)]` (`== != > >= < <=`). Results table with jump links; errors shown inline.
 
+### ✅ Beautify / Minify / Sort keys
+Tree-pane toolbar: Beautify copies 2-space formatted JSON (Alt-click = 4-space), Minify copies minified, Shift-click on either downloads instead. "A→Z" toggles sorted object keys in the tree AND in emitted output (`sortDeep`; key order is not semantic so this is lossless). Both emitters run `maskDeep` first when the PII mask is on — the mask contract covers whole-payload output too.
+
 ### ✅ Click-to-copy (part of keyboard-nav nice-to-have)
 Clicking a key/index in the tree copies its dot-path; clicking a value copies the value — blocked with a toast when the value is masked. `copyText()` uses the Clipboard API with an execCommand fallback; feedback via `#toast`.
 
@@ -125,7 +128,8 @@ No test framework. Manual smoke test = load the built-in demo payload (`btnDemo`
 8. Query tab: `$..score` returns 3 matches on the demo; `$.bureau[?(@.score>100)]` returns transunion only; a bad expression shows an inline error.
 9. Insights: inferred schema renders, Copy/Download work, `dob` gets `format: date`.
 10. Click a tree key → "Path copied" toast; click a masked value → blocked with a toast.
-11. `node --check` passes on the extracted script block.
+11. Beautify/Minify copy parseable JSON; A→Z re-orders the tree and the copied output; with mask on, copied output has `••••••` for PII values and untouched non-PII values.
+12. `node --check` passes on the extracted script block.
 
 ## Deployment
 
