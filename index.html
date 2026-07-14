@@ -179,8 +179,29 @@ h3.sect{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--
 #loadErr{color:var(--high);font-family:var(--mono);font-size:12px;margin-top:10px;white-space:pre-wrap;display:none}
 .privacy{margin-top:14px;font-size:11.5px;color:var(--text-faint);border-top:1px solid var(--border);padding-top:10px}
 
+/* copy affordances */
+.key,.val{cursor:copy}
+.key:hover,.val:hover{text-decoration:underline dotted}
+
+/* toast */
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--bg-raise2);border:1px solid var(--accent);color:var(--text);font-size:12.5px;padding:7px 16px;border-radius:20px;z-index:80;opacity:0;pointer-events:none}
+#toast.show{opacity:1}
+
+/* drag & drop veil */
+#dropVeil{position:fixed;inset:0;background:rgba(13,17,23,.88);border:3px dashed var(--accent);z-index:70;display:none;align-items:center;justify-content:center;font-size:18px;color:var(--accent);font-weight:600;pointer-events:none}
+#dropVeil.show{display:flex}
+
+/* schema block */
+#schemaPre{font-family:var(--mono);font-size:11.5px;line-height:1.5;background:var(--bg-raise);border:1px solid var(--border);border-radius:var(--radius);padding:12px;overflow:auto;max-height:340px;white-space:pre}
+details.schemaWrap summary{cursor:pointer;color:var(--accent);font-size:12.5px;margin-bottom:8px}
+
+/* query tab */
+#qInput{width:100%;font-family:var(--mono)}
+.qErr{color:var(--high);font-family:var(--mono);font-size:12px;margin-top:8px}
+
 @media (prefers-reduced-motion:no-preference){
   .finding,.chip,button{transition:border-color .15s,background .15s}
+  #toast{transition:opacity .2s}
 }
 @media (max-width:900px){
   main{flex-direction:column}
@@ -195,6 +216,8 @@ h3.sect{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--
   <div id="strip" aria-live="polite"></div>
   <div class="actions">
     <button id="btnLoad" class="primary">Load payload</button>
+    <button id="btnUpload" title="Upload a .json file from your computer (or just drag one onto the window)">Upload</button>
+    <input type="file" id="fileHeader" accept=".json,.jsonl,.ndjson,.txt,application/json" style="display:none">
     <button id="btnDemo">Demo</button>
     <button id="btnMask" aria-pressed="false" title="Mask detected personal data everywhere">Mask PII: off</button>
     <button id="btnCsv" title="Download the flattened leaves as CSV">CSV</button>
@@ -207,6 +230,9 @@ h3.sect{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--
     <div class="paneHead">
       <input id="search" type="text" placeholder="Search keys, paths or values… (Enter = next match)" aria-label="Search payload">
       <span id="searchInfo"></span>
+      <button id="btnPretty" title="Copy formatted JSON (2-space indent). Shift-click to download. Alt-click for 4-space indent.">Beautify</button>
+      <button id="btnMinify" title="Copy minified JSON. Shift-click to download.">Minify</button>
+      <button id="btnSort" aria-pressed="false" title="Sort object keys A→Z in the tree and in Beautify/Minify output (key order is not semantic in JSON)">A→Z</button>
     </div>
     <div id="tree" tabindex="0"></div>
   </section>
@@ -217,6 +243,7 @@ h3.sect{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--
       <button data-tab="quality">Quality <span class="n" id="nQuality">0</span></button>
       <button data-tab="pii">PII <span class="n" id="nPii">0</span></button>
       <button data-tab="flatten">Flatten</button>
+      <button data-tab="query">Query</button>
       <button data-tab="diff">Diff <span class="n" id="nDiff">–</span></button>
       <button data-tab="rules">Rules <span class="n" id="nRules">0</span></button>
     </nav>
@@ -224,6 +251,7 @@ h3.sect{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--
     <div class="tabBody" id="tab-quality"></div>
     <div class="tabBody" id="tab-pii"></div>
     <div class="tabBody" id="tab-flatten"></div>
+    <div class="tabBody" id="tab-query"></div>
     <div class="tabBody" id="tab-diff"></div>
     <div class="tabBody" id="tab-rules"></div>
   </section>
@@ -246,11 +274,15 @@ h3.sect{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--
     <div id="loadErr" role="alert"></div>
     <div class="panelRow">
       <button id="btnParse" class="primary">Analyse</button>
+      <button id="btnRepair" style="display:none" title="Fix common defects: single quotes, trailing commas, comments, unquoted keys, Python literals, NDJSON, JSONP">Attempt repair</button>
       <button id="btnCancel">Cancel</button>
     </div>
     <p class="privacy">Payloads never leave the browser. Custom rule packs (rules only, never payload data) are kept in localStorage.</p>
   </div>
 </div>
+
+<div id="dropVeil" aria-hidden="true">Drop a JSON file to analyse</div>
+<div id="toast" role="status" aria-live="polite"></div>
 
 <script>
 (function(){
@@ -265,6 +297,8 @@ var RULES=[];               // active custom rules
 var RULE_HITS=new Map();    // rule name -> hit count from last analyse
 var SEARCH_HITS=[], SEARCH_IX=-1;
 var RULES_LS_KEY='jsonxray_rules_v1';
+var REPAIR_NOTES=[];        // what the last auto-repair changed (surfaced as an info finding)
+var SORT=false;             // sort object keys A→Z in tree + beautify/minify output
 
 var $=function(id){return document.getElementById(id);};
 
@@ -301,6 +335,28 @@ function displayVal(path,v,type){
 function plainVal(path,v){
   if(MASK&&_piiset.has(path))return '••••••';
   return String(v);
+}
+var _toastT=null;
+function toast(msg){
+  var t=$('toast');
+  t.textContent=msg;
+  t.classList.add('show');
+  clearTimeout(_toastT);
+  _toastT=setTimeout(function(){t.classList.remove('show');},1800);
+}
+function copyText(txt,label){
+  function done(ok){toast(ok?(label||'Copied'):'Copy failed — clipboard unavailable');}
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(function(){done(true);},function(){fallback();});
+  }else{fallback();}
+  function fallback(){
+    var ta=document.createElement('textarea');
+    ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();
+    var ok=false;
+    try{ok=document.execCommand('copy');}catch(e){}
+    ta.remove();done(ok);
+  }
 }
 function download(name,text,mime){
   var blob=new Blob([text],{type:mime||'text/plain'});
@@ -370,6 +426,11 @@ function dateFormatOf(s){
 function analyse(meta){
   FINDINGS=[];RULE_HITS=new Map();
   var keyReg=meta.keyReg;
+
+  if(REPAIR_NOTES.length){
+    push('info','repair','Payload was auto-repaired before parsing',
+      'The pasted text was not valid JSON; the following fixes were applied: '+REPAIR_NOTES.join('; ')+'. The upstream producer is emitting malformed JSON — that is a defect in its own right.',[]);
+  }
 
   /* 1. inconsistent key spellings */
   keyReg.forEach(function(e,norm){
@@ -618,6 +679,279 @@ function computeDiff(a,b){
           total:added.length+removed.length+changed.length+retyped.length};
 }
 
+/* ---------------- repair engine ---------------- */
+/* Fixes the malformed-JSON defects QA actually pastes: smart quotes, JSONP
+   wrappers, comments, single quotes, unquoted keys, trailing commas,
+   Python/JS literals, NDJSON. Returns {text, notes[]}; caller re-parses. */
+function repairJSON(src){
+  var notes=[];
+  var txt=src;
+
+  if(txt.charCodeAt(0)===0xFEFF){txt=txt.slice(1);note('removed byte-order mark');}
+  if(/[“”‘’]/.test(txt)){
+    txt=txt.replace(/[“”]/g,'"').replace(/[‘’]/g,"'");
+    note('replaced smart quotes with straight quotes');
+  }
+  var jsonp=txt.match(/^\s*[\w$.]+\s*\(([\s\S]*)\)\s*;?\s*$/);
+  if(jsonp&&!/^[\s]*[[{]/.test(txt)){txt=jsonp[1];note('stripped JSONP wrapper');}
+
+  txt=scanFix(txt);
+
+  // NDJSON / JSONL: every non-empty line parses on its own -> wrap as array
+  if(!parses(txt)){
+    var lines=txt.split(/\r?\n/).map(function(l){return l.trim();}).filter(Boolean);
+    if(lines.length>1&&lines.every(parses)){
+      txt='['+lines.join(',')+']';
+      note('wrapped '+lines.length+' NDJSON/JSONL lines as an array');
+    }
+  }
+  return {text:txt,notes:notes};
+
+  function parses(s){try{JSON.parse(s);return true;}catch(e){return false;}}
+  function note(m){if(notes.indexOf(m)<0)notes.push(m);}
+
+  /* single char-scan, string-aware: comments, single quotes, unquoted keys,
+     trailing commas, bare literals */
+  function scanFix(s){
+    var out='',i=0,n=s.length;
+    while(i<n){
+      var c=s[i];
+      if(c==='"'){                                  // double-quoted string: copy verbatim
+        var j=i+1;out+=c;
+        while(j<n){out+=s[j];if(s[j]==='\\'){out+=s[j+1]||'';j+=2;continue;}if(s[j]==='"'){j++;break;}j++;}
+        i=j;continue;
+      }
+      if(c==="'"){                                  // single-quoted string -> double
+        var k=i+1,buf='';
+        while(k<n){
+          if(s[k]==='\\'){buf+=s[k]+(s[k+1]||'');k+=2;continue;}
+          if(s[k]==="'")break;
+          buf+=s[k];k++;
+        }
+        out+='"'+buf.replace(/\\'/g,"'").replace(/"/g,'\\"')+'"';
+        i=k+1;note('converted single-quoted strings to double quotes');continue;
+      }
+      if(c==='/'&&s[i+1]==='/'){                    // line comment
+        while(i<n&&s[i]!=='\n')i++;
+        note('stripped comments');continue;
+      }
+      if(c==='/'&&s[i+1]==='*'){                    // block comment
+        i+=2;while(i<n&&!(s[i]==='*'&&s[i+1]==='/'))i++;
+        i+=2;note('stripped comments');continue;
+      }
+      if(c===','){                                  // trailing comma?
+        var m=i+1;while(m<n&&/\s/.test(s[m]))m++;
+        if(s[m]==='}'||s[m]===']'){i++;note('removed trailing commas');continue;}
+        out+=c;i++;continue;
+      }
+      if(/[A-Za-z_$]/.test(c)){                     // bare word: literal or unquoted key
+        var w=i;while(w<n&&/[\w$]/.test(s[w]))w++;
+        var word=s.slice(i,w);
+        var LIT={'True':'true','False':'false','None':'null','NULL':'null','Null':'null','undefined':'null','NaN':'"NaN"','Infinity':'"Infinity"'};
+        var m2=w;while(m2<n&&/\s/.test(s[m2]))m2++;
+        if(s[m2]===':'){                            // it is a key
+          out+='"'+word+'"';i=w;note('quoted unquoted keys');continue;
+        }
+        if(LIT[word]){out+=LIT[word];i=w;note('normalised '+word+' literal');continue;}
+        out+=word;i=w;continue;
+      }
+      out+=c;i++;
+    }
+    return out;
+  }
+}
+
+/* ---------------- JSONPath query engine (subset) ---------------- */
+/* Supports: $  .key  ["key"]  [n]  [*]  .*  ..key  [?(@.path)]
+   [?(@.path op literal)] with op in == != >= <= > <          */
+function runQuery(expr,root){
+  var toks=tokenizeQuery(expr);
+  var set=[{v:root,segs:[]}];
+  toks.forEach(function(t){
+    var next=[];
+    set.forEach(function(item){
+      var v=item.v;
+      if(t.k==='key'){
+        if(typeOf(v)==='object'&&Object.prototype.hasOwnProperty.call(v,t.name))next.push({v:v[t.name],segs:item.segs.concat(t.name)});
+      }else if(t.k==='index'){
+        if(Array.isArray(v)&&t.n>=0&&t.n<v.length)next.push({v:v[t.n],segs:item.segs.concat(t.n)});
+        else if(Array.isArray(v)&&t.n<0&&v.length+t.n>=0)next.push({v:v[v.length+t.n],segs:item.segs.concat(v.length+t.n)});
+      }else if(t.k==='wild'){
+        if(Array.isArray(v))v.forEach(function(c,ix){next.push({v:c,segs:item.segs.concat(ix)});});
+        else if(typeOf(v)==='object')Object.keys(v).forEach(function(kk){next.push({v:v[kk],segs:item.segs.concat(kk)});});
+      }else if(t.k==='deep'){
+        (function dig(val,segs){
+          if(typeOf(val)==='object'){
+            Object.keys(val).forEach(function(kk){
+              if(kk===t.name)next.push({v:val[kk],segs:segs.concat(kk)});
+              dig(val[kk],segs.concat(kk));
+            });
+          }else if(Array.isArray(val)){
+            val.forEach(function(c,ix){dig(c,segs.concat(ix));});
+          }
+        })(v,item.segs);
+      }else if(t.k==='filter'){
+        var arr=Array.isArray(v)?v.map(function(c,ix){return {v:c,segs:item.segs.concat(ix)};})
+               :typeOf(v)==='object'?Object.keys(v).map(function(kk){return {v:v[kk],segs:item.segs.concat(kk)};}):[];
+        arr.forEach(function(cand){
+          var lhs=cand.v;
+          for(var d=0;d<t.path.length;d++){
+            if(lhs&&typeof lhs==='object'&&!Array.isArray(lhs)&&Object.prototype.hasOwnProperty.call(lhs,t.path[d]))lhs=lhs[t.path[d]];
+            else{lhs=undefined;break;}
+          }
+          var pass;
+          if(!t.op)pass=lhs!==undefined;
+          else{
+            if(lhs===undefined)pass=false;
+            else switch(t.op){
+              case '==':pass=lhs===t.rhs||String(lhs)===String(t.rhs);break;
+              case '!=':pass=lhs!==t.rhs&&String(lhs)!==String(t.rhs);break;
+              case '>':pass=Number(lhs)>Number(t.rhs);break;
+              case '>=':pass=Number(lhs)>=Number(t.rhs);break;
+              case '<':pass=Number(lhs)<Number(t.rhs);break;
+              case '<=':pass=Number(lhs)<=Number(t.rhs);break;
+              default:pass=false;
+            }
+          }
+          if(pass)next.push(cand);
+        });
+      }
+    });
+    set=next;
+  });
+  return set;
+}
+function tokenizeQuery(expr){
+  var s=expr.trim();
+  if(s[0]!=='$')throw new Error('Query must start with $');
+  var i=1,toks=[];
+  while(i<s.length){
+    if(s[i]==='.'&&s[i+1]==='.'){
+      i+=2;var m=s.slice(i).match(/^[\w$][\w$]*/);
+      if(!m)throw new Error('".." must be followed by a key name');
+      toks.push({k:'deep',name:m[0]});i+=m[0].length;
+    }else if(s[i]==='.'){
+      i++;
+      if(s[i]==='*'){toks.push({k:'wild'});i++;continue;}
+      var m2=s.slice(i).match(/^[\w$][\w$]*/);
+      if(!m2)throw new Error('"." must be followed by a key name or *');
+      toks.push({k:'key',name:m2[0]});i+=m2[0].length;
+    }else if(s[i]==='['){
+      var close=findClose(s,i);
+      var inner=s.slice(i+1,close).trim();
+      if(inner==='*')toks.push({k:'wild'});
+      else if(/^-?\d+$/.test(inner))toks.push({k:'index',n:Number(inner)});
+      else if(/^"(.*)"$/.test(inner)||/^'(.*)'$/.test(inner))toks.push({k:'key',name:inner.slice(1,-1)});
+      else if(/^\?\(/.test(inner)){
+        var f=inner.slice(2,-1).trim();
+        var fm=f.match(/^@((?:\.[\w$]+)+)\s*(==|!=|>=|<=|>|<)?\s*(.*)$/);
+        if(!fm)throw new Error('Unsupported filter: '+inner);
+        var path=fm[1].split('.').filter(Boolean);
+        var tok={k:'filter',path:path,op:fm[2]||null,rhs:null};
+        if(tok.op){
+          var lit=fm[3].trim();
+          if(/^'(.*)'$/.test(lit)||/^"(.*)"$/.test(lit))tok.rhs=lit.slice(1,-1);
+          else if(lit==='true')tok.rhs=true;
+          else if(lit==='false')tok.rhs=false;
+          else if(lit==='null')tok.rhs=null;
+          else if(/^-?\d+(\.\d+)?$/.test(lit))tok.rhs=Number(lit);
+          else throw new Error('Unsupported literal: '+lit);
+        }
+        toks.push(tok);
+      }
+      else throw new Error('Unsupported bracket segment: ['+inner+']');
+      i=close+1;
+    }else throw new Error('Unexpected character "'+s[i]+'" at position '+i);
+  }
+  return toks;
+  function findClose(str,from){
+    var depth=0;
+    for(var p=from;p<str.length;p++){
+      if(str[p]==='[')depth++;
+      else if(str[p]===']'){depth--;if(depth===0)return p;}
+    }
+    throw new Error('Unbalanced [');
+  }
+}
+
+/* ---------------- schema inference (draft-07) ---------------- */
+/* Enums come from low-cardinality string fields; fields with detected PII
+   never contribute enum values (schemas get pasted into tickets). */
+function inferSchema(root){
+  var s=infer(root,[]);
+  s.$schema='http://json-schema.org/draft-07/schema#';
+  return s;
+
+  function fmtHint(v){
+    if(/^\d{4}-\d{2}-\d{2}$/.test(v))return 'date';
+    if(DATE_RE.test(v)&&/[T ]/.test(v))return 'date-time';
+    if(RE_EMAIL.test(v)&&v.indexOf(' ')<0)return 'email';
+    return null;
+  }
+  function infer(v,segs){
+    var t=typeOf(v);
+    if(t==='object'){
+      var props={},req=[];
+      Object.keys(v).forEach(function(k){props[k]=infer(v[k],segs.concat(k));req.push(k);});
+      var o={type:'object',properties:props};
+      if(req.length)o.required=req;
+      return o;
+    }
+    if(t==='array'){
+      if(!v.length)return {type:'array',items:{}};
+      var merged=null;
+      for(var i=0;i<v.length;i++)merged=merge(merged,infer(v[i],segs.concat(i)));
+      // enum for low-cardinality string arrays / homogeneous string items
+      if(merged&&merged.type==='string'){
+        var vals=[],pii=false;
+        for(var j=0;j<v.length;j++){
+          if(typeof v[j]!=='string'){vals=null;break;}
+          if(_piiset.has(dotPath(segs.concat(j))))pii=true;
+          if(vals.indexOf(v[j])<0)vals.push(v[j]);
+        }
+        if(vals&&!pii&&v.length>=3&&vals.length<=8)merged.enum=vals.sort();
+      }
+      return {type:'array',items:merged||{}};
+    }
+    if(t==='string'){
+      var o2={type:'string'};
+      var f=fmtHint(v);
+      if(f)o2.format=f;
+      return o2;
+    }
+    if(t==='number')return {type:Number.isInteger(v)?'integer':'number'};
+    if(t==='boolean')return {type:'boolean'};
+    return {type:'null'};
+  }
+  function merge(a,b){
+    if(!a)return b;
+    if(!b)return a;
+    if(a.type===b.type){
+      if(a.type==='object'){
+        var props={},req=[];
+        var keys={};
+        Object.keys(a.properties||{}).forEach(function(k){keys[k]=1;});
+        Object.keys(b.properties||{}).forEach(function(k){keys[k]=1;});
+        Object.keys(keys).forEach(function(k){
+          props[k]=merge((a.properties||{})[k],(b.properties||{})[k]);
+        });
+        // required = present in ALL siblings
+        (a.required||[]).forEach(function(k){if((b.required||[]).indexOf(k)>=0)req.push(k);});
+        var o={type:'object',properties:props};
+        if(req.length)o.required=req;
+        return o;
+      }
+      if(a.type==='array')return {type:'array',items:merge(a.items,b.items)};
+      var out={type:a.type};
+      if(a.format&&a.format===b.format)out.format=a.format;
+      return out;
+    }
+    if((a.type==='integer'&&b.type==='number')||(a.type==='number'&&b.type==='integer'))return {type:'number'};
+    var types=[].concat(a.type,b.type).filter(function(x,ix,arr){return arr.indexOf(x)===ix;});
+    return {type:types};
+  }
+}
+
 /* ---------------- tree render ---------------- */
 function renderTree(){
   var el=$('tree');
@@ -663,6 +997,7 @@ function buildNode(v,segs,depth,keyLabel){
       for(var i=0;i<v.length;i++)kc.appendChild(buildNode(v[i],segs.concat(i),depth+1,i));
     }else{
       var ks=Object.keys(v);
+      if(SORT)ks.sort();
       for(var j=0;j<ks.length;j++)kc.appendChild(buildNode(v[ks[j]],segs.concat(ks[j]),depth+1,ks[j]));
     }
     wrap.appendChild(kc);
@@ -675,6 +1010,21 @@ $('tree').addEventListener('click',function(e){
     var node=tw.closest('.node');
     node.classList.toggle('closed');
     tw.textContent=node.classList.contains('closed')?'▸':'▾';
+    return;
+  }
+  var key=e.target.closest('.key,.idx');
+  if(key){
+    var n1=key.closest('.node');
+    if(n1)copyText(n1.dataset.path,'Path copied');
+    return;
+  }
+  var val=e.target.closest('.val');
+  if(val){
+    var n2=val.closest('.node');
+    if(n2){
+      if(MASK&&_piiset.has(n2.dataset.path)){toast('Value is masked — unmask to copy');return;}
+      copyText(val.textContent.replace(/^"|"$/g,''),'Value copied');
+    }
   }
 });
 $('tree').addEventListener('keydown',function(e){
@@ -765,7 +1115,7 @@ function renderInsights(){
   }
   var freq=[];
   window.__meta.keyReg.forEach(function(e,norm){
-    var n=0;e.paths.length;freq.push({k:Array.from(e.spellings)[0],n:e.paths.length,sp:e.spellings.size});
+    freq.push({k:Array.from(e.spellings)[0],n:e.paths.length,sp:e.spellings.size});
   });
   freq.sort(function(a,b){return b.n-a.n;});
   h+='<h3 class="sect">Most frequent keys</h3><table><tr><th>key</th><th>seen at (sample count)</th><th>spellings</th></tr>';
@@ -773,7 +1123,22 @@ function renderInsights(){
     h+='<tr><td class="mono">'+esc(f.k)+'</td><td>'+f.n+'</td><td>'+(f.sp>1?'<span class="sev high">'+f.sp+'</span>':f.sp)+'</td></tr>';
   });
   h+='</table>';
+
+  var schemaTxt='';
+  try{schemaTxt=JSON.stringify(inferSchema(ROOT),null,2);}catch(e){schemaTxt='';}
+  if(schemaTxt){
+    h+='<h3 class="sect">Inferred JSON Schema (draft-07)</h3>';
+    h+='<div style="display:flex;gap:8px;margin-bottom:8px">';
+    h+='<button id="btnSchemaCopy">Copy schema</button>';
+    h+='<button id="btnSchemaDl">Download schema</button></div>';
+    h+='<p class="note" style="margin-bottom:8px">Types + required (keys present in all array siblings), enums for low-cardinality strings, format hints. Fields with detected PII never contribute enum values.</p>';
+    h+='<details class="schemaWrap"><summary>Show schema</summary><pre id="schemaPre">'+esc(schemaTxt)+'</pre></details>';
+  }
   el.innerHTML=h;
+  if(schemaTxt){
+    $('btnSchemaCopy').addEventListener('click',function(){copyText(schemaTxt,'Schema copied');});
+    $('btnSchemaDl').addEventListener('click',function(){download('payload-schema.json',schemaTxt,'application/json');});
+  }
 }
 
 /* ---------------- quality tab ---------------- */
@@ -843,6 +1208,41 @@ function renderFlatten(){
     renderFlatten();
     var q2=$('flatQ');q2.focus();q2.setSelectionRange(pos,pos);
   },250));
+}
+
+/* ---------------- query tab ---------------- */
+var lastQuery='';
+function renderQuery(){
+  var el=$('tab-query');
+  if(!ROOT){el.innerHTML='<div class="empty">Load a payload to query it.</div>';return;}
+  var h='<div style="display:flex;gap:8px;margin-bottom:6px">';
+  h+='<input type="text" id="qInput" placeholder="$.applicant.address.postcode   ·   $..score   ·   $.items[*].id   ·   $.cases[?(@.type==&quot;AFR&quot;)]" value="'+esc(lastQuery)+'">';
+  h+='<button id="qRun" class="primary">Run</button></div>';
+  h+='<p class="note" style="margin-bottom:10px">JSONPath subset: <code>$.key</code> · <code>["key"]</code> · <code>[0]</code> / <code>[-1]</code> · <code>[*]</code> / <code>.*</code> · <code>..key</code> (deep scan) · <code>[?(@.path)]</code> existence · <code>[?(@.path op value)]</code> with <code>== != &gt; &gt;= &lt; &lt;=</code></p>';
+  h+='<div id="qOut"></div>';
+  el.innerHTML=h;
+  function run(){
+    lastQuery=$('qInput').value.trim();
+    var out=$('qOut');
+    if(!lastQuery){out.innerHTML='';return;}
+    var res;
+    try{res=runQuery(lastQuery,ROOT);}
+    catch(e){out.innerHTML='<div class="qErr">'+esc(e.message)+'</div>';return;}
+    if(!res.length){out.innerHTML='<div class="empty">No matches.</div>';return;}
+    var hh='<p class="note" style="margin-bottom:8px"><b>'+res.length+'</b> match'+(res.length===1?'':'es')+'</p>';
+    hh+='<table><tr><th class="mono">path</th><th>type</th><th class="mono">value</th></tr>';
+    res.slice(0,1000).forEach(function(r){
+      var p=dotPath(r.segs),t=typeOf(r.v);
+      var shown=t==='object'?'{…} '+Object.keys(r.v).length+' keys':t==='array'?'[…] '+r.v.length+' items':displayVal(p,r.v,t);
+      hh+='<tr><td class="mono"><button class="pathLink" data-jump="'+esc(p)+'">'+esc(p)+'</button></td><td>'+t+'</td><td class="mono">'+shown+'</td></tr>';
+    });
+    hh+='</table>';
+    if(res.length>1000)hh+='<p class="note" style="margin-top:8px">Showing first 1,000 matches.</p>';
+    out.innerHTML=hh;
+  }
+  $('qRun').addEventListener('click',run);
+  $('qInput').addEventListener('keydown',function(e){if(e.key==='Enter')run();});
+  if(lastQuery)run();
 }
 
 /* ---------------- diff tab ---------------- */
@@ -1059,6 +1459,46 @@ $('btnReport').addEventListener('click',function(){
   download('json-xray-report.md',L.join('\n'),'text/markdown');
 });
 
+/* ---------------- beautify / minify / sort ---------------- */
+function sortDeep(v){
+  var t=typeOf(v);
+  if(t==='array')return v.map(sortDeep);
+  if(t==='object'){
+    var o={};
+    Object.keys(v).sort().forEach(function(k){o[k]=sortDeep(v[k]);});
+    return o;
+  }
+  return v;
+}
+function maskDeep(v,segs){
+  var t=typeOf(v);
+  if(t==='array')return v.map(function(c,i){return maskDeep(c,segs.concat(i));});
+  if(t==='object'){
+    var o={};
+    Object.keys(v).forEach(function(k){o[k]=maskDeep(v[k],segs.concat(k));});
+    return o;
+  }
+  return _piiset.has(dotPath(segs))?'••••••':v;
+}
+function emitJSON(pretty,e){
+  if(!ROOT)return;
+  var src=MASK?maskDeep(ROOT,[]):ROOT;
+  if(SORT)src=sortDeep(src);
+  var txt=pretty?JSON.stringify(src,null,e.altKey?4:2):JSON.stringify(src);
+  var label=(pretty?'Formatted':'Minified')+' JSON ('+fmtBytes(txt.length)+')'+(MASK?', PII masked':'');
+  if(e.shiftKey)download(pretty?'payload-pretty.json':'payload.min.json',txt,'application/json');
+  else copyText(txt,label+' copied');
+}
+$('btnPretty').addEventListener('click',function(e){emitJSON(true,e);});
+$('btnMinify').addEventListener('click',function(e){emitJSON(false,e);});
+$('btnSort').addEventListener('click',function(){
+  SORT=!SORT;
+  this.classList.toggle('on',SORT);
+  this.setAttribute('aria-pressed',String(SORT));
+  renderTree();
+  toast(SORT?'Keys sorted A→Z (view + output only — the payload itself is untouched)':'Original key order restored');
+});
+
 /* ---------------- mask toggle ---------------- */
 $('btnMask').addEventListener('click',function(){
   MASK=!MASK;
@@ -1104,6 +1544,7 @@ function renderAll(){
   renderQuality();
   renderPII();
   renderFlatten();
+  renderQuery();
   renderDiff();
   renderRules();
 }
@@ -1124,7 +1565,7 @@ function load(txt,cmpTxt){
 }
 
 /* ---------------- overlay wiring ---------------- */
-function showOverlay(){$('overlay').classList.remove('hidden');$('loadErr').style.display='none';$('txtMain').focus();}
+function showOverlay(){$('overlay').classList.remove('hidden');$('loadErr').style.display='none';$('btnRepair').style.display='none';$('txtMain').focus();}
 function hideOverlay(){$('overlay').classList.add('hidden');}
 $('btnLoad').addEventListener('click',showOverlay);
 $('btnCancel').addEventListener('click',hideOverlay);
@@ -1145,17 +1586,77 @@ function readFileInto(input,ta){
 }
 readFileInto($('fileMain'),$('txtMain'));
 readFileInto($('fileCmp'),$('txtCmp'));
+function attemptLoad(txt,cmpTxt){
+  REPAIR_NOTES=[];
+  var err=load(txt,cmpTxt);
+  if(!err){hideOverlay();switchTab('quality');return true;}
+  $('txtMain').value=txt;
+  if(cmpTxt)$('txtCmp').value=cmpTxt;
+  showOverlay();
+  var e=$('loadErr');e.textContent=err;e.style.display='block';
+  $('btnRepair').style.display='inline-block';
+  return false;
+}
 $('btnParse').addEventListener('click',function(){
-  var err=load($('txtMain').value,$('txtCmp').value);
+  attemptLoad($('txtMain').value,$('txtCmp').value);
+});
+$('btnRepair').addEventListener('click',function(){
+  var r=repairJSON($('txtMain').value);
+  var cmpRaw=$('txtCmp').value,cmpFixed=cmpRaw;
+  if(cmpRaw.trim()){
+    try{JSON.parse(cmpRaw);}catch(err){cmpFixed=repairJSON(cmpRaw).text;}
+  }
+  REPAIR_NOTES=r.notes;
+  var err=load(r.text,cmpFixed);
   if(err){
-    var e=$('loadErr');e.textContent=err;e.style.display='block';
+    REPAIR_NOTES=[];
+    var e=$('loadErr');
+    e.textContent='Repair could not produce valid JSON.\n'+err;
+    e.style.display='block';
     return;
   }
+  $('txtMain').value=r.text;
+  if(cmpFixed!==cmpRaw)$('txtCmp').value=cmpFixed;
   hideOverlay();
   switchTab('quality');
+  toast('Repaired: '+(r.notes.join('; ')||'no changes needed'));
 });
 document.addEventListener('keydown',function(e){
   if(e.key==='Escape'&&!$('overlay').classList.contains('hidden'))hideOverlay();
+});
+
+/* ---------------- upload + drag & drop ---------------- */
+function loadFromFile(file){
+  if(!file)return;
+  var rd=new FileReader();
+  rd.onload=function(){
+    var ok=attemptLoad(String(rd.result),'');
+    if(ok)toast('Loaded '+file.name);
+  };
+  rd.readAsText(file);
+}
+$('btnUpload').addEventListener('click',function(){$('fileHeader').click();});
+$('fileHeader').addEventListener('change',function(){
+  loadFromFile(this.files[0]);
+  this.value='';
+});
+var dragDepth=0;
+window.addEventListener('dragenter',function(e){
+  if(e.dataTransfer&&Array.prototype.some.call(e.dataTransfer.types||[],function(t){return t==='Files';})){
+    dragDepth++;
+    $('dropVeil').classList.add('show');
+  }
+});
+window.addEventListener('dragleave',function(){
+  dragDepth=Math.max(0,dragDepth-1);
+  if(!dragDepth)$('dropVeil').classList.remove('show');
+});
+window.addEventListener('dragover',function(e){e.preventDefault();});
+window.addEventListener('drop',function(e){
+  e.preventDefault();
+  dragDepth=0;
+  $('dropVeil').classList.remove('show');
+  if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length)loadFromFile(e.dataTransfer.files[0]);
 });
 
 /* ---------------- demo payload ---------------- */
@@ -1218,6 +1719,7 @@ var DEMO={
 };
 function loadDemo(){
   hideOverlay();
+  REPAIR_NOTES=[];
   $('txtMain').value=JSON.stringify(DEMO,null,2);
   var err=load($('txtMain').value,'');
   if(err){alert(err);return;}
