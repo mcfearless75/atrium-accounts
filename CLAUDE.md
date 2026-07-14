@@ -1,0 +1,119 @@
+# JSON X-Ray — Payload Workbench
+
+Project brief for Claude Code. Read this fully before making changes.
+
+## What this is
+
+A single-file, zero-dependency, fully client-side JSON inspection webapp aimed at data/decisioning professionals (credit risk, bureau payloads, API traces). It goes beyond "beautify JSON" tools: it actively scans payloads for data-quality defects and PII.
+
+**Owner:** PaulMc (Bluewater Associates). Primary real-world use case: inspecting credit decisioning connector payloads (TransUnion, Equifax, CIFAS, affordability engines) during QA/testing at a UK financial services client. Payloads are sensitive — the no-server, no-network architecture is a deliberate design constraint, not an accident. **Never add any code that transmits payload data anywhere.**
+
+## Repo layout
+
+```
+index.html                    ← the entire app (HTML + CSS + JS in one file)
+CLAUDE.md                     ← this file
+README.md                     ← user-facing docs + Pages setup
+.github/workflows/pages.yml   ← GitHub Pages deploy (publishes repo root on push to main)
+```
+
+There is no build step, no package.json, no framework. Keep it that way unless a feature genuinely cannot be done in vanilla JS (unlikely). The single-file constraint is a feature: it must remain trivially deployable to GitHub Pages / Vercel / an intranet share by copying one file.
+
+## Architecture (inside index.html)
+
+One IIFE, strict mode. Key state:
+
+| Global | Purpose |
+|---|---|
+| `ROOT` | parsed JSON object |
+| `RAW` | minified string (for size stats) |
+| `NODES` | every node from a full walk: `{id, segs, depth, type, v}` |
+| `FLAT` | leaf values only: `{path, segs, type, v, node}` |
+| `FINDINGS` | quality findings: `{sev: high|med|info, cat, title, desc, paths[]}` |
+| `PII` | detected personal data: `{kind, path, value, note}` |
+| `MASK` | boolean — global PII mask toggle |
+| `_piiset` | Set of PII paths for O(1) lookup during render |
+
+Core functions:
+
+- `walk(root)` — single-pass traversal. Builds NODES/FLAT and a `keyReg` Map: normalised key name → spellings, types seen, sample paths. Returns `{keyReg, dateVals, maxDepth, counts}`.
+- `analyse(meta)` — the quality engine. All detectors live here. Pushes into FINDINGS.
+- `scanPII()` — regex + key-name heuristics. Pushes into PII.
+- `renderTree()` / `buildNode()` — recursive DOM build; nodes at depth ≥3 or with >60 children start collapsed; event delegation on `#tree`.
+- `renderInsights / renderQuality / renderPII / renderFlatten / renderStrip` — side-panel tabs and the header scan strip.
+- `dotPath(segs)` / `jsonPath(segs)` — path formatting (bracket-quotes non-identifier keys).
+- `load(txt)` — parse (with line-number error pinpointing), then run the full pipeline.
+
+UI conventions: any element with `data-jump="<dot.path>"` becomes a clickable path link that expands ancestors and scrolls the tree to that node (global click handler).
+
+## Current detectors (quality engine)
+
+1. **Inconsistent key spellings** — same normalised key, multiple spellings (`firstName`/`FirstName`) → high
+2. **Duplicate concepts** — both `dob` and `dateOfBirth` families present → high
+3. **Mixed types per key name** across paths → high
+4. **Booleans stored as strings** (`"true"`/`"false"`) → med
+5. **Numbers stored as strings** (excluding id/ref/phone/postcode-named keys) → med
+6. **Legacy Y/N flags** → info
+7. **Mixed date/timestamp formats** (date-only, `+0000`, `+00:00`, `Z`, no-TZ) → med
+8. **Impossible DOBs** — under-18 or future, on birth-named keys → high
+9. **Conflicting DOB values** across the payload → high
+10. **Sentinel values** — 999, 9999, 9999.99, -1, 99, 999999 → med
+11. **`"Infinity"` string literals** → med
+12. **Empty objects/arrays** → info
+13. **Null density** (>3 nulls) → info
+14. **Leading/trailing whitespace in strings** → med
+
+PII detector kinds: Email, Phone (UK), Postcode, Date of birth, Income, Account number, Name, Address, Reference ID.
+
+## Coding conventions
+
+- Vanilla JS, no dependencies, no CDN scripts (fonts via Google Fonts are the only external fetch — acceptable, but the app must degrade gracefully offline).
+- UK English in all UI copy.
+- Escape everything user-supplied with `esc()` before injecting into innerHTML — payloads are untrusted input; XSS via a crafted JSON string is the main attack surface. Audit this on every render change.
+- Respect the mask: any new surface that displays leaf values must check `MASK && _piiset.has(path)`.
+- Design tokens are CSS variables at `:root`. Do not hardcode colours.
+- Keep render fast for ~10–50k nodes: prefer event delegation, avoid per-node listeners, debounce inputs.
+- `prefers-reduced-motion` is respected; keep focus-visible outlines intact.
+
+## Shipped from the backlog
+
+### ✅ P1 — Diff mode
+Second textarea in the load overlay ("Compare against…", optional). Diff on flattened paths (added / removed / changed value / changed type) in a colour-coded "Diff" tab; paths jump to the primary payload's tree; scan strip gains a diff chip when active. `computeDiff()` + `flattenTo()`.
+
+### ✅ P2 — Custom rule packs
+JSON rule format `{ "name", "severity", "match": {"keyRegex", "pathRegex", "valueRegex", "type", "negate"}, "message" }` — `negate: true` flags values that FAIL the value regex (the whitelist shape). Loaded from a pasted blob in the Rules tab; persisted in `localStorage` under `jsonxray_rules_v1` (**rules only — never payload data**). Ships the "UK credit decisioning" example pack inline (`EXAMPLE_PACK`): RAG value validation, CIFAS case-type whitelist, bureau score 0–1000 sanity, APR 0–100 range. Rules run inside `analyse()` after built-ins; findings get `cat:"custom"`.
+
+### ✅ P4 — Shareable finding report
+"Report" button → Markdown summary of findings + PII counts, values masked; raw PII values only included when mask is off AND the user confirms.
+
+## Backlog (priority order)
+
+### P3 — Schema inference + export
+- Infer a JSON Schema (draft-07) from the payload: types, required (present in all array siblings), enums for low-cardinality strings, format hints (date, email).
+- "Copy schema" button in Insights.
+
+### P5 — Performance pass
+- Virtualised tree rendering for payloads >50k nodes (windowing on scroll).
+- Web Worker for `walk`/`analyse` on files >2MB, with a progress state on the scan strip.
+
+### Nice-to-haves (unprioritised)
+- JSONPath query box (evaluate `$.a[?(@.x>1)]`-style queries, highlight matches).
+- JSONL / NDJSON support (treat each line as a record; aggregate quality stats).
+- Dark/light theme toggle (dark is default and primary).
+- Keyboard nav in tree (↑↓ move, ←→ collapse/expand, Enter copy path).
+
+## Testing
+
+No test framework. Manual smoke test = load the built-in demo payload (`btnDemo`) — it is deliberately dirty and must trigger **every** built-in detector. If you add a detector, extend the demo payload so it fires there. After any change:
+
+1. Demo loads, scan strip shows critical + warnings + PII segments.
+2. Search "dob" → hits navigate with Enter.
+3. Click a finding path → tree expands and scrolls to it.
+4. Mask toggle hides values in tree, PII tab, flatten tab, and CSV export.
+5. CSV export downloads and opens.
+6. Paste invalid JSON → error message includes approximate line number.
+7. `node --check` passes on the extracted script block.
+
+## Deployment
+
+Static hosting only. GitHub Pages is wired up via `.github/workflows/pages.yml` (publishes the repo root on every push to `main`); one-time setup is Settings → Pages → Source: **GitHub Actions**. `vercel deploy` or an intranet share also work. No env vars, no server.
