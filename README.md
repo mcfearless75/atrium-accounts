@@ -6,13 +6,16 @@ A single-file, zero-dependency, fully client-side JSON inspection webapp for dat
 
 ## Features
 
-- **Tree explorer** — collapsible payload tree with search (keys, paths, values; Enter cycles matches), clickable path links everywhere, and node/size stats.
+- **Load any way you like** — paste, **Upload** button, or **drag-and-drop a .json file anywhere on the window**. Malformed input? **Attempt repair** fixes what QA actually pastes: single quotes, unquoted keys, trailing commas, comments, smart quotes, Python `True`/`False`/`None`, `NaN`/`Infinity`, JSONP wrappers and NDJSON/JSONL — and flags the repair as a finding, because a producer emitting broken JSON is itself a defect.
+- **Tree explorer** — collapsible payload tree with search (keys, paths, values; Enter cycles matches), clickable path links everywhere, node/size stats, and **click-to-copy**: click any key to copy its dot-path, any value to copy the value (mask-aware).
 - **Quality engine** — 14 built-in detectors for the defects that actually break decisioning:
   inconsistent key spellings, duplicate concepts (`dob` + `dateOfBirth`), mixed types per key,
   booleans/numbers stored as strings, legacy Y/N flags, mixed date/timestamp formats,
   impossible or conflicting dates of birth, sentinel values (999/9999/-1/9999.99),
   `"Infinity"` string literals, empty containers, null density, and invisible whitespace padding.
 - **PII scanner + mask** — heuristics for Email, Phone (UK), Postcode, Date of birth, Income, Account number, Name, Address and Reference ID. One toggle masks detected values across the tree, tables, CSV export and report.
+- **Query tab** — JSONPath subset (`$.key`, `["key"]`, `[0]`/`[-1]`, `[*]`/`.*`, `..key` deep scan, `[?(@.path)]` existence and `[?(@.path op value)]` comparison filters) with jump-to-tree results.
+- **Schema inference** — draft-07 JSON Schema inferred from the payload (types, required-in-all-siblings, enums for low-cardinality strings, date/date-time/email format hints; PII fields never contribute enum values). Copy or download from the Insights tab.
 - **Diff mode** — load a second payload ("Compare against…") and get added / removed / changed-value / changed-type rows on flattened paths, with clickable jumps into the primary tree.
 - **Custom rule packs** — user-defined detectors as JSON (key/path/value regex, type filter, negate-for-whitelist), persisted in localStorage (rules only — never payload data). Ships with a **UK credit decisioning** example pack: RAG value validation, CIFAS case-type whitelist, bureau score sanity range, APR range check.
 - **Exports** — flattened-leaves CSV, and a Markdown findings report (PII values masked unless you explicitly confirm otherwise) ready for a Jira ticket or Confluence page.

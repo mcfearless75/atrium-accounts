@@ -83,24 +83,33 @@ Second textarea in the load overlay ("Compare against…", optional). Diff on fl
 ### ✅ P2 — Custom rule packs
 JSON rule format `{ "name", "severity", "match": {"keyRegex", "pathRegex", "valueRegex", "type", "negate"}, "message" }` — `negate: true` flags values that FAIL the value regex (the whitelist shape). Loaded from a pasted blob in the Rules tab; persisted in `localStorage` under `jsonxray_rules_v1` (**rules only — never payload data**). Ships the "UK credit decisioning" example pack inline (`EXAMPLE_PACK`): RAG value validation, CIFAS case-type whitelist, bureau score 0–1000 sanity, APR 0–100 range. Rules run inside `analyse()` after built-ins; findings get `cat:"custom"`.
 
+### ✅ P3 — Schema inference + export
+`inferSchema()` — draft-07: types, required (keys present in all array siblings), enums for low-cardinality strings (≥3 samples, ≤8 distinct; **PII-detected fields never contribute enum values**), format hints (date, date-time, email). Copy/download buttons in Insights.
+
 ### ✅ P4 — Shareable finding report
 "Report" button → Markdown summary of findings + PII counts, values masked; raw PII values only included when mask is off AND the user confirms.
 
-## Backlog (priority order)
+### ✅ Upload + drag & drop + JSON repair
+Header "Upload" button and whole-window drag-and-drop (`loadFromFile`, `#dropVeil`). `repairJSON()` fixes malformed input on request ("Attempt repair" appears on parse failure): smart quotes, JSONP wrappers, comments, single quotes, unquoted keys, trailing commas, Python/JS literals (`True`/`None`/`NaN`/`Infinity`/`undefined`), NDJSON/JSONL wrapping. Repairs are surfaced as an info finding (`cat:"repair"`) — a producer emitting broken JSON is itself a defect.
 
-### P3 — Schema inference + export
-- Infer a JSON Schema (draft-07) from the payload: types, required (present in all array siblings), enums for low-cardinality strings, format hints (date, email).
-- "Copy schema" button in Insights.
+### ✅ JSONPath query box (was a nice-to-have)
+"Query" tab — `runQuery()`/`tokenizeQuery()` subset: `$.key`, `["key"]`, `[n]`/`[-n]`, `[*]`/`.*`, `..key` deep scan, `[?(@.path)]`, `[?(@.path op literal)]` (`== != > >= < <=`). Results table with jump links; errors shown inline.
+
+### ✅ Click-to-copy (part of keyboard-nav nice-to-have)
+Clicking a key/index in the tree copies its dot-path; clicking a value copies the value — blocked with a toast when the value is masked. `copyText()` uses the Clipboard API with an execCommand fallback; feedback via `#toast`.
+
+## Backlog (priority order)
 
 ### P5 — Performance pass
 - Virtualised tree rendering for payloads >50k nodes (windowing on scroll).
 - Web Worker for `walk`/`analyse` on files >2MB, with a progress state on the scan strip.
 
 ### Nice-to-haves (unprioritised)
-- JSONPath query box (evaluate `$.a[?(@.x>1)]`-style queries, highlight matches).
-- JSONL / NDJSON support (treat each line as a record; aggregate quality stats).
 - Dark/light theme toggle (dark is default and primary).
 - Keyboard nav in tree (↑↓ move, ←→ collapse/expand, Enter copy path).
+- Aggregate quality stats per NDJSON record (basic NDJSON→array wrapping ships via repair).
+- Related-values profile per key (JSON Hero-style: all values for a key across array siblings, incl. nulls).
+- TypeScript interface generation from the inferred schema (JSON Crack-style).
 
 ## Testing
 
@@ -111,8 +120,12 @@ No test framework. Manual smoke test = load the built-in demo payload (`btnDemo`
 3. Click a finding path → tree expands and scrolls to it.
 4. Mask toggle hides values in tree, PII tab, flatten tab, and CSV export.
 5. CSV export downloads and opens.
-6. Paste invalid JSON → error message includes approximate line number.
-7. `node --check` passes on the extracted script block.
+6. Paste invalid JSON → error message includes approximate line number, and "Attempt repair" appears; repairing `{'a': 1, b: True,}` succeeds and adds the repair info finding.
+7. Upload button and drag-and-drop both load a `.json` file; NDJSON input repairs into an array.
+8. Query tab: `$..score` returns 3 matches on the demo; `$.bureau[?(@.score>100)]` returns transunion only; a bad expression shows an inline error.
+9. Insights: inferred schema renders, Copy/Download work, `dob` gets `format: date`.
+10. Click a tree key → "Path copied" toast; click a masked value → blocked with a toast.
+11. `node --check` passes on the extracted script block.
 
 ## Deployment
 
