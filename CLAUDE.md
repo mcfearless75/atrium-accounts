@@ -162,6 +162,13 @@ user pastes their own key AND ticks the consent checkbox. The key is held in a f
 only — never persisted. Never widen this: no auto-send, no telemetry, no other endpoints, no
 key storage. The briefing itself is built locally and respects `MASK`.
 
+**Model routing.** `routeModel(choice, question, findings, txCount)` (pure layer) picks the
+model. Manual tiers: Fast = `claude-haiku-4-5`, Balanced = `claude-sonnet-5`, Deep =
+`claude-opus-5`. Auto scores ledger complexity (severity-weighted findings, capped at 12,
+plus a size bump) plus question shape (analytical keywords, multiple questions, length) and
+routes ≥14 → deep, ≥8 → balanced, else fast. The chosen model and the reason are always
+surfaced to the user (`#aiMeta`). Keep routing logic in the pure layer.
+
 **Smoke test (sage.html)** after any change:
 
 1. Demo loads; strip shows 4 critical / 5 warnings / 6 info; all 15 detector families appear.
@@ -169,7 +176,8 @@ key storage. The briefing itself is built locally and respects `MASK`.
 3. Mask toggle hides Account + Details in grid, top-accounts list, and regenerated briefing.
 4. Insights: Benford chart renders with observed bars + expected markers; data table opens.
 5. Upload and drag-and-drop both load a `.csv`; a JSON array of Business Cloud-style records parses.
-6. AI tab: briefing generates, Copy/Download work; Ask button stays disabled until consent ticked.
+6. AI tab: briefing generates, Copy/Download work; Ask button stays disabled until consent
+   ticked; model selector defaults to Auto and the answer is annotated with the routed model.
 7. `node --check` passes on the extracted script block; the pure layer runs headless when
    sliced at the DOM-layer marker.
 

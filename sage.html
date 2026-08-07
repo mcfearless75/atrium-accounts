@@ -43,7 +43,7 @@ button:disabled:hover{border-color:var(--border)}
 button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 button.primary{background:var(--accent);border-color:var(--accent);color:#0d1117;font-weight:600}
 button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
-input[type=text],input[type=password],textarea{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:6px 10px;font-size:13px}
+input[type=text],input[type=password],textarea,select{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:6px 10px;font-size:13px;font-family:inherit}
 textarea{font-family:var(--mono);font-size:12px;resize:vertical}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
@@ -209,8 +209,20 @@ details summary{cursor:pointer;font-size:12px;color:var(--text-dim);margin-top:8
       <p class="aiNote">Sends <b>only the briefing text above plus your question</b> from this browser straight to the Anthropic API. Your key is held in memory for this page only — never stored, never sent anywhere else. Review the briefing first; with the mask on, account names and narrative are already redacted.</p>
       <input id="aiKey" type="password" placeholder="Anthropic API key (sk-ant-…)" autocomplete="off">
       <input id="aiQ" type="text" placeholder="Question — e.g. “Which findings should we raise with the client first, and why?”" autocomplete="off">
+      <div class="btnRow">
+        <label style="font-size:12px;color:var(--text-dim)">Model
+          <select id="aiModel" title="Auto routes by ledger complexity and question type">
+            <option value="auto" selected>Auto — route by complexity</option>
+            <option value="fast">Fast — Claude Haiku 4.5</option>
+            <option value="balanced">Balanced — Claude Sonnet 5</option>
+            <option value="deep">Deep — Claude Opus 5</option>
+          </select>
+        </label>
+        <span style="font-size:11.5px;color:var(--text-faint)">Auto weighs finding severity, ledger size and how analytical the question is — quick lookups go to the fast model, judgement calls to the deep one.</span>
+      </div>
       <label class="consent"><input type="checkbox" id="aiConsent"> I understand the briefing text and my question will be sent to the Anthropic API (api.anthropic.com).</label>
       <div class="btnRow"><button id="btnAsk" disabled>Ask Claude</button><span id="aiStatus" style="font-size:12px;color:var(--text-dim)"></span></div>
+      <div id="aiMeta" style="display:none;font-size:11.5px;color:var(--text-dim);margin-bottom:6px"></div>
       <div id="aiOut"></div>
     </div>
   </section>
@@ -548,6 +560,37 @@ function computeStats(txs){
   return {count:txs.length, net, tax, min, max, top};
 }
 
+/* ---------- AI model routing ----------
+   Auto mode scores the job and picks the cheapest model that can do it well:
+   findings severity + ledger size say how much there is to reason over,
+   the question's shape says how much judgement is being asked for. */
+const MODELS = {
+  fast:     {id:'claude-haiku-4-5', label:'Claude Haiku 4.5'},
+  balanced: {id:'claude-sonnet-5',  label:'Claude Sonnet 5'},
+  deep:     {id:'claude-opus-5',    label:'Claude Opus 5'}
+};
+
+function routeModel(choice, question, findings, txCount){
+  if (choice !== 'auto'){
+    return {tier:choice, model:MODELS[choice].id, label:MODELS[choice].label, why:'selected manually'};
+  }
+  const c = {high:0, med:0, info:0};
+  for (const f of findings) c[f.sev]++;
+  const ledger = Math.min(12, c.high*2 + c.med + c.info*0.5 + (txCount > 500 ? 3 : txCount > 100 ? 1 : 0));
+  let ask = 0;
+  const q = String(question||'').toLowerCase();
+  if (/\b(why|explain|prioriti|reconcil|root cause|walk (me|us) through|strateg|justif|compare|recommend|assess|materiality|risk)\b/.test(q)) ask += 6;
+  if ((q.match(/\?/g) || []).length > 1) ask += 2;
+  if (q.length > 160) ask += 2;
+  const score = ledger + ask;
+  const reasons = [];
+  reasons.push(c.high ? c.high + ' critical finding' + (c.high > 1 ? 's' : '') : 'no critical findings');
+  reasons.push(ask >= 6 ? 'analytical question' : 'simple question');
+  const tier = score >= 14 ? 'deep' : score >= 6 ? 'balanced' : 'fast';
+  return {tier, model:MODELS[tier].id, label:MODELS[tier].label,
+          why:'auto — ' + reasons.join(', ') + ' (complexity ' + Math.round(score) + '/20+)'};
+}
+
 function fmtGBP(n){
   return '£' + Math.abs(n).toLocaleString('en-GB',{minimumFractionDigits:2, maximumFractionDigits:2});
 }
@@ -820,9 +863,11 @@ async function askClaude(){
   if (!brief){ toast('Generate the briefing pack first'); return; }
   if (!key){ toast('Paste your Anthropic API key'); return; }
   if (!q){ toast('Type a question'); return; }
+  const route = routeModel($('aiModel').value, q, FINDINGS, TXS.length);
   $('btnAsk').disabled = true;
-  $('aiStatus').innerHTML = '<span class="spin"></span>Asking Claude…';
+  $('aiStatus').innerHTML = '<span class="spin"></span>Asking ' + esc(route.label) + '…';
   out.style.display = 'none'; out.classList.remove('err');
+  $('aiMeta').style.display = 'none';
   try{
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method:'POST',
@@ -833,7 +878,7 @@ async function askClaude(){
         'anthropic-dangerous-direct-browser-access':'true'
       },
       body: JSON.stringify({
-        model:'claude-opus-5',
+        model: route.model,
         max_tokens:2048,
         messages:[{role:'user', content: brief + '\n\n---\nAnalyst question: ' + q}]
       })
@@ -850,6 +895,8 @@ async function askClaude(){
       const text = (data.content || []).filter(bk => bk.type === 'text').map(bk => bk.text).join('\n');
       out.textContent = text || '(empty response)';
     }
+    $('aiMeta').textContent = 'Answered by ' + route.label + ' (' + route.why + ')';
+    $('aiMeta').style.display = 'block';
     out.style.display = 'block';
   } catch(e){
     out.classList.add('err');

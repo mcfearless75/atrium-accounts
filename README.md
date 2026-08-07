@@ -31,6 +31,7 @@ A sister app in the same file, same rules: single-file, zero-dependency, fully c
 - **Mask toggle** — hides account names and narrative across the grid, insights and every export, so screenshots and briefs are safe to share.
 - **AI briefing pack** — one click builds a Markdown brief (totals, findings, Benford table, top accounts, analyst instructions) ready to paste into any assistant the client permits. Built locally; respects the mask.
 - **Ask Claude (optional, BYO key)** — behind an explicit consent checkbox, sends *only* the briefing plus your question directly from the browser to the Anthropic API. The key lives in memory only. Everything else stays offline, same as JSON X-Ray.
+- **Complexity-aware model routing** — Auto mode weighs finding severity, ledger size and how analytical your question is, then routes it to Claude Haiku 4.5 (quick lookups), Sonnet 5 (moderate) or Opus 5 (judgement calls) — cheapest model that can do the job, with the choice and reasoning shown on every answer. Manual override available.
 - **Demo ledger** — deliberately dirty; fires all 15 detector families.
 
 Open `sage.html` — it deploys alongside `index.html` on the same Pages site.
