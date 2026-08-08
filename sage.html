@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sage X-Ray — Ledger Workbench</title>
+<meta name="description" content="Client-side inspection workbench for Sage ledger exports: data-quality findings, VAT sanity checks, Benford analysis and an AI briefing pack. Nothing leaves your browser unless you say so.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;
+  --bg-raise:#161b22;
+  --bg-raise2:#1c2330;
+  --border:#2d333b;
+  --text:#e6edf3;
+  --text-dim:#8b949e;
+  --text-faint:#606a76;
+  --accent:#58a6ff;
+  --accent-soft:rgba(88,166,255,.14);
+  --high:#f85149;
+  --high-soft:rgba(248,81,73,.14);
+  --med:#d29922;
+  --med-soft:rgba(210,153,34,.14);
+  --info:#3fb950;
+  --info-soft:rgba(63,185,80,.12);
+  --pii:#bc8cff;
+  --pii-soft:rgba(188,140,255,.14);
+  --chart-observed:#3d8bdf;
+  --chart-expected:#b3841a;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --radius:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;display:flex;flex-direction:column;overflow:hidden}
+button{font-family:inherit;font-size:13px;color:var(--text);background:var(--bg-raise2);border:1px solid var(--border);border-radius:var(--radius);padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:disabled:hover{border-color:var(--border)}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#0d1117;font-weight:600}
+button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+input[type=text],input[type=password],textarea,select{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:6px 10px;font-size:13px;font-family:inherit}
+textarea{font-family:var(--mono);font-size:12px;resize:vertical}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* header */
+header{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--bg-raise);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.logo{font-weight:700;font-size:15px;letter-spacing:.3px;white-space:nowrap}
+.logo em{color:var(--accent);font-style:normal}
+.logo small{display:block;font-weight:400;font-size:10px;color:var(--text-faint);letter-spacing:.4px}
+#strip{display:flex;gap:8px;flex:1;flex-wrap:wrap;align-items:center;min-width:0}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);white-space:nowrap;cursor:default}
+.chip b{color:var(--text);font-weight:600}
+.chip.click{cursor:pointer}
+.chip.click:hover{border-color:var(--accent)}
+.chip.high{border-color:var(--high);background:var(--high-soft);color:var(--high)}
+.chip.high b{color:var(--high)}
+.chip.med{border-color:var(--med);background:var(--med-soft);color:var(--med)}
+.chip.med b{color:var(--med)}
+.chip.info{border-color:var(--info);background:var(--info-soft);color:var(--info)}
+.chip.info b{color:var(--info)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* layout */
+main{flex:1;display:flex;min-height:0}
+#left{flex:1.25;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--border)}
+#right{flex:1;display:flex;flex-direction:column;min-width:0}
+.paneHead{display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--bg-raise)}
+#search{flex:1;min-width:0;font-family:var(--mono)}
+#searchInfo{font-size:11px;color:var(--text-dim);white-space:nowrap}
+
+/* transactions table */
+#gridWrap{flex:1;overflow:auto}
+table.grid{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px}
+table.grid th{position:sticky;top:0;background:var(--bg-raise);color:var(--text-dim);text-align:left;font-weight:600;padding:6px 10px;border-bottom:1px solid var(--border);white-space:nowrap;z-index:1}
+table.grid td{padding:4px 10px;border-bottom:1px solid #1b212b;white-space:nowrap;vertical-align:top}
+table.grid td.num{text-align:right;color:#f2cc60}
+table.grid td.neg{color:var(--high)}
+table.grid tr.flagged td{background:var(--med-soft)}
+table.grid tr.flagged.high td{background:var(--high-soft)}
+table.grid tr.hot td{background:var(--accent-soft);box-shadow:inset 0 0 0 1px var(--accent)}
+td.acct{color:#79c0ff}
+td.typ{color:var(--pii)}
+td.masked{color:var(--pii);letter-spacing:2px}
+
+/* tabs */
+#tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg-raise);overflow-x:auto}
+#tabs button{border:none;border-radius:0;background:none;padding:9px 14px;color:var(--text-dim);border-bottom:2px solid transparent;white-space:nowrap}
+#tabs button:hover{color:var(--text)}
+#tabs button.active{color:var(--accent);border-bottom-color:var(--accent)}
+#tabs button .n{font-size:10px;background:var(--bg-raise2);border-radius:10px;padding:1px 6px;margin-left:5px;color:var(--text-dim)}
+#tabs button.active .n{background:var(--accent-soft);color:var(--accent)}
+.tabBody{flex:1;overflow:auto;padding:14px;display:none}
+.tabBody.active{display:block}
+
+/* findings */
+.finding{border:1px solid var(--border);border-left:3px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:10px;background:var(--bg-raise)}
+.finding.high{border-left-color:var(--high)}
+.finding.med{border-left-color:var(--med)}
+.finding.info{border-left-color:var(--info)}
+.finding h4{font-size:13px;margin-bottom:3px;display:flex;gap:8px;align-items:center}
+.sev{font-size:10px;font-weight:700;letter-spacing:.6px;padding:1px 7px;border-radius:10px;text-transform:uppercase}
+.sev.high{background:var(--high-soft);color:var(--high)}
+.sev.med{background:var(--med-soft);color:var(--med)}
+.sev.info{background:var(--info-soft);color:var(--info)}
+.finding p{font-size:12.5px;color:var(--text-dim);line-height:1.5}
+.rowLink{display:inline-block;font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:0 6px;margin:3px 4px 0 0;cursor:pointer}
+.rowLink:hover{text-decoration:underline}
+
+/* insights */
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.tile{background:var(--bg-raise);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px}
+.tile .v{font-size:19px;font-weight:700;font-family:var(--mono)}
+.tile .l{font-size:11px;color:var(--text-dim);margin-top:2px}
+.card{background:var(--bg-raise);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:14px}
+.card h3{font-size:13px;margin-bottom:8px}
+.card h3 small{font-weight:400;color:var(--text-dim)}
+.legend{display:flex;gap:16px;font-size:11.5px;color:var(--text-dim);margin-bottom:6px;align-items:center}
+.legend .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+.benTable{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px;margin-top:8px}
+.benTable th,.benTable td{padding:3px 8px;text-align:right;border-bottom:1px solid #1b212b;color:var(--text-dim)}
+.benTable th{color:var(--text)}
+details summary{cursor:pointer;font-size:12px;color:var(--text-dim);margin-top:8px}
+.acctList{font-family:var(--mono);font-size:12px;line-height:1.9}
+.acctList .bar{display:inline-block;height:8px;background:var(--chart-observed);border-radius:3px;margin-right:8px;vertical-align:0}
+
+/* AI tab */
+.aiNote{font-size:12px;color:var(--text-dim);line-height:1.55;margin-bottom:10px}
+.aiNote b{color:var(--text)}
+#brief{width:100%;min-height:220px;margin:8px 0}
+.btnRow{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
+.consent{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--text-dim);margin:10px 0;line-height:1.5}
+.consent input{margin-top:2px}
+#aiKey,#aiQ{width:100%;margin-bottom:8px;font-family:var(--mono)}
+#aiOut{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;font-size:13px;line-height:1.6;display:none;white-space:pre-wrap;word-break:break-word}
+#aiOut.err{border-color:var(--high);color:var(--high)}
+#aiOut h3{margin:8px 0 4px}
+.spin{display:inline-block;width:12px;height:12px;border:2px solid var(--accent-soft);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none;border-top-color:var(--accent-soft)}}
+
+/* load overlay */
+#overlay{position:fixed;inset:0;background:rgba(4,8,14,.82);display:flex;align-items:center;justify-content:center;z-index:40;padding:20px}
+#overlay.hidden,#dropVeil.hidden{display:none}
+.panel{background:var(--bg-raise);border:1px solid var(--border);border-radius:12px;max-width:760px;width:100%;padding:22px;max-height:92vh;overflow:auto}
+.panel h2{font-size:17px;margin-bottom:4px}
+.panel h2 em{color:var(--accent);font-style:normal}
+.panel .sub{font-size:12.5px;color:var(--text-dim);margin-bottom:14px;line-height:1.55}
+#paste{width:100%;min-height:180px}
+.panel .btnRow{margin-top:12px}
+#parseErr{color:var(--high);font-size:12.5px;margin-top:8px;display:none;font-family:var(--mono)}
+.privacy{margin-top:14px;font-size:11.5px;color:var(--text-faint);line-height:1.5;border-top:1px solid var(--border);padding-top:10px}
+#dropVeil{position:fixed;inset:0;background:rgba(13,17,23,.9);z-index:60;display:flex;align-items:center;justify-content:center;border:3px dashed var(--accent);font-size:18px;color:var(--accent);pointer-events:none}
+
+/* toast */
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--bg-raise2);border:1px solid var(--accent);color:var(--text);border-radius:20px;padding:7px 18px;font-size:13px;z-index:80;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){#toast{transition:none}}
+@media (max-width:900px){main{flex-direction:column}#left{border-right:none;border-bottom:1px solid var(--border)}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Sage <em>X-Ray</em><small>LEDGER WORKBENCH · 100% CLIENT-SIDE</small></div>
+  <div id="strip"></div>
+  <div class="actions">
+    <button id="btnDemo">Demo</button>
+    <button id="btnUpload">Upload</button>
+    <button id="btnPaste">Paste / load</button>
+    <button id="btnMask" title="Mask account names and narrative in every surface">Mask: off</button>
+    <a href="index.html" style="align-self:center;font-size:12px">JSON X-Ray →</a>
+  </div>
+</header>
+
+<main>
+  <section id="left" aria-label="Transactions">
+    <div class="paneHead">
+      <input id="search" type="text" placeholder="Filter transactions… (account, ref, narrative, amount)" autocomplete="off">
+      <span id="searchInfo"></span>
+    </div>
+    <div id="gridWrap"><table class="grid" id="grid"></table></div>
+  </section>
+  <section id="right" aria-label="Analysis">
+    <nav id="tabs">
+      <button data-tab="findings" class="active">Findings <span class="n" id="nFindings">0</span></button>
+      <button data-tab="insights">Insights</button>
+      <button data-tab="ai">AI Copilot</button>
+    </nav>
+    <div class="tabBody active" id="tab-findings"></div>
+    <div class="tabBody" id="tab-insights"></div>
+    <div class="tabBody" id="tab-ai">
+      <p class="aiNote"><b>AI briefing pack.</b> Generates a Markdown brief of everything the quality engine found — totals, findings, Benford distribution — ready to paste into Claude, Copilot or any assistant your client permits. The brief is built locally and respects the mask toggle. <b>Nothing is transmitted unless you use “Ask Claude” below.</b></p>
+      <div class="btnRow">
+        <button id="btnBrief" class="primary">Generate briefing pack</button>
+        <button id="btnCopyBrief">Copy</button>
+        <button id="btnDlBrief">Download .md</button>
+      </div>
+      <textarea id="brief" spellcheck="false" placeholder="Load a ledger, then generate the briefing pack…"></textarea>
+      <h3 style="font-size:13px;margin:14px 0 6px">Ask Claude directly <small style="color:var(--text-dim);font-weight:400">(optional, bring your own API key)</small></h3>
+      <p class="aiNote">Sends <b>only the briefing text above plus your question</b> from this browser straight to the Anthropic API. Your key is held in memory for this page only — never stored, never sent anywhere else. Review the briefing first; with the mask on, account names and narrative are already redacted.</p>
+      <input id="aiKey" type="password" placeholder="Anthropic API key (sk-ant-…)" autocomplete="off">
+      <input id="aiQ" type="text" placeholder="Question — e.g. “Which findings should we raise with the client first, and why?”" autocomplete="off">
+      <div class="btnRow">
+        <label style="font-size:12px;color:var(--text-dim)">Model
+          <select id="aiModel" title="Auto routes by ledger complexity and question type">
+            <option value="auto" selected>Auto — route by complexity</option>
+            <option value="fast">Fast — Claude Haiku 4.5</option>
+            <option value="balanced">Balanced — Claude Sonnet 5</option>
+            <option value="deep">Deep — Claude Opus 5</option>
+          </select>
+        </label>
+        <span style="font-size:11.5px;color:var(--text-faint)">Auto weighs finding severity, ledger size and how analytical the question is — quick lookups go to the fast model, judgement calls to the deep one.</span>
+      </div>
+      <label class="consent"><input type="checkbox" id="aiConsent"> I understand the briefing text and my question will be sent to the Anthropic API (api.anthropic.com).</label>
+      <div class="btnRow"><button id="btnAsk" disabled>Ask Claude</button><span id="aiStatus" style="font-size:12px;color:var(--text-dim)"></span></div>
+      <div id="aiMeta" style="display:none;font-size:11.5px;color:var(--text-dim);margin-bottom:6px"></div>
+      <div id="aiOut"></div>
+    </div>
+  </section>
+</main>
+
+<div id="overlay">
+  <div class="panel">
+    <h2>Sage <em>X-Ray</em> — Ledger Workbench</h2>
+    <p class="sub">Paste a <b>Sage 50 audit-trail / transaction CSV</b> (any column order — headers are matched fuzzily) or <b>Sage Business Cloud API JSON</b>. The quality engine scans for duplicate postings, VAT miscalculations, unbalanced journals, invoice-sequence gaps, threshold-skimming amounts, weekend and out-of-period postings, and runs a Benford first-digit analysis.</p>
+    <textarea id="paste" spellcheck="false" placeholder="Type,Account,Nominal,Date,Ref,Details,Net,Tax,T/C&#10;SI,ACME01,4000,01/06/2026,INV1001,Consultancy,1250.00,250.00,T1&#10;…or paste JSON from the Sage Business Cloud API"></textarea>
+    <div id="parseErr"></div>
+    <div class="btnRow">
+      <button id="btnAnalyse" class="primary">Analyse</button>
+      <button id="btnOverlayUpload">Upload file…</button>
+      <button id="btnOverlayDemo">Load demo ledger</button>
+      <button id="btnOverlayClose">Close</button>
+    </div>
+    <p class="privacy">Privacy by design: this page makes no network requests with your data. Parsing and analysis run entirely in your browser — safe for live client ledgers. The only optional exception is the “Ask Claude” button on the AI Copilot tab, which is inert until you paste a key and tick the consent box.</p>
+  </div>
+</div>
+
+<div id="dropVeil" class="hidden">Drop ledger file to analyse</div>
+<div id="toast" role="status"></div>
+<input type="file" id="fileInput" accept=".csv,.json,.txt" style="display:none">
+
+<script>
+(function(){
+'use strict';
+
+/* ================= PURE LAYER (parse + analyse) ================= */
+
+const BENFORD = [0.301,0.176,0.125,0.097,0.079,0.067,0.058,0.051,0.046];
+const VAT_RATES = {T0:0,T1:0.20,T2:0,T4:0,T5:0.05,T9:0};
+const THRESHOLDS = [1000,5000,10000,25000];
+
+function normKey(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+
+const COL_ALIASES = {
+  type:['type','transtype','transactiontype','trantype'],
+  account:['account','ac','acref','accountref','accountreference','contact','contactname','supplier','customer'],
+  nominal:['nominal','nc','ncref','nominalcode','nominalacref','ledgeraccount','ledgeraccountcode'],
+  dept:['dept','department','deptcode'],
+  date:['date','transdate','transactiondate','postingdate','invoicedate'],
+  ref:['ref','reference','invref','invoicenumber','invoiceref','docref','number'],
+  details:['details','description','narrative','memo','detail'],
+  net:['net','netamount','amount','totalnetamount','netvalue','total'],
+  tax:['tax','vat','taxamount','vatamount','taxvalue'],
+  tc:['tc','taxcode','vatcode','taxrate','vatrate','taxrateid']
+};
+
+function mapColumns(headers){
+  const map = {};
+  const norm = headers.map(normKey);
+  for (const field in COL_ALIASES){
+    for (const alias of COL_ALIASES[field]){
+      const i = norm.indexOf(alias);
+      if (i !== -1){ map[field] = i; break; }
+    }
+  }
+  return map;
+}
+
+function parseCSV(text){
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (q){
+      if (c === '"'){ if (text[i+1] === '"'){ cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ','){ row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r'){
+      if (c === '\r' && text[i+1] === '\n') i++;
+      row.push(cell); cell = '';
+      if (row.length > 1 || row[0] !== '') rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  row.push(cell);
+  if (row.length > 1 || row[0] !== '') rows.push(row);
+  return rows;
+}
+
+function parseDate(s){
+  if (!s) return null;
+  s = String(s).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);                    // ISO
+  if (m) return mk(+m[1], +m[2], +m[3]);
+  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);     // UK dd/mm/yyyy
+  if (m){ let y = +m[3]; if (y < 100) y += 2000; return mk(y, +m[2], +m[1]); }
+  return null;
+  function mk(y,mo,d){
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    const dt = new Date(Date.UTC(y, mo-1, d));
+    return isNaN(dt) ? null : dt;
+  }
+}
+
+function parseMoney(s){
+  if (s == null || s === '') return null;
+  const n = parseFloat(String(s).replace(/[£$,\s]/g,''));
+  return isNaN(n) ? null : n;
+}
+
+function normaliseTaxCode(v){
+  if (v == null || String(v).trim() === '') return '';
+  const s = String(v).trim().toUpperCase();
+  if (/^T\d+$/.test(s)) return s;
+  // Sage Business Cloud style rate names
+  if (/^STANDARD/.test(s) || s === '20' || s === '20%') return 'T1';
+  if (/^LOWER|^REDUCED/.test(s) || s === '5' || s === '5%') return 'T5';
+  if (/^ZERO/.test(s) || s === '0' || s === '0%') return 'T0';
+  if (/^EXEMPT/.test(s)) return 'T2';
+  if (/^NO.?VAT|OUTSIDE/.test(s)) return 'T9';
+  return s;
+}
+
+// One flattened object (from CSV row or JSON record) → transaction
+function toTx(get, i){
+  return {
+    i,
+    type: String(get('type')||'').trim().toUpperCase(),
+    account: String(get('account')||'').trim(),
+    nominal: String(get('nominal')||'').trim(),
+    dept: String(get('dept')||'').trim(),
+    dateRaw: String(get('date')||'').trim(),
+    date: parseDate(get('date')),
+    ref: String(get('ref')||'').trim(),
+    details: String(get('details')||'').trim(),
+    net: parseMoney(get('net')),
+    tax: parseMoney(get('tax')),
+    tc: normaliseTaxCode(get('tc'))
+  };
+}
+
+function parseInput(text){
+  text = String(text||'').trim();
+  if (!text) return {error:'Nothing to analyse — paste a CSV or JSON export first.'};
+  if (text[0] === '[' || text[0] === '{'){
+    let data;
+    try { data = JSON.parse(text); }
+    catch(e){ return {error:'Looks like JSON but failed to parse: ' + e.message}; }
+    let arr = Array.isArray(data) ? data
+      : Array.isArray(data.$items) ? data.$items
+      : Array.isArray(data.items) ? data.items
+      : Array.isArray(data.transactions) ? data.transactions : null;
+    if (!arr) return {error:'JSON parsed but no transaction array found (expected an array, or $items / items / transactions).'};
+    const txs = arr.map((rec, i) => {
+      const flat = {};
+      (function walk(o, prefix){
+        for (const k in o){
+          const v = o[k];
+          if (v && typeof v === 'object' && !Array.isArray(v)) walk(v, k);
+          else flat[normKey(prefix ? prefix + k : k)] = v;
+        }
+      })(rec, '');
+      const get = f => {
+        for (const alias of COL_ALIASES[f]) if (alias in flat) return flat[alias];
+        return '';
+      };
+      return toTx(get, i);
+    });
+    return {txs, format:'json'};
+  }
+  const rows = parseCSV(text);
+  if (rows.length < 2) return {error:'CSV needs a header row plus at least one transaction row.'};
+  const map = mapColumns(rows[0]);
+  if (!('net' in map) || !('date' in map))
+    return {error:'Could not find the essential columns. Headers seen: ' + rows[0].join(', ') + ' — need at least a date column and a net/amount column.'};
+  const txs = rows.slice(1).map((r, i) => toTx(f => f in map ? r[map[f]] : '', i));
+  return {txs, format:'csv'};
+}
+
+/* ---------- quality engine ---------- */
+
+const INVOICE_TYPES = ['SI','PI'];
+const CREDIT_TYPES = ['SC','PC'];
+
+function benfordCalc(txs){
+  const counts = new Array(9).fill(0); let n = 0;
+  for (const t of txs){
+    const a = Math.abs(t.net || 0);
+    if (a < 10) continue;
+    const d = +String(Math.floor(a))[0];
+    if (d >= 1){ counts[d-1]++; n++; }
+  }
+  if (n === 0) return {n:0, observed:new Array(9).fill(0), counts, mad:0};
+  const observed = counts.map(c => c/n);
+  const mad = observed.reduce((s,o,i) => s + Math.abs(o - BENFORD[i]), 0) / 9;
+  return {n, observed, counts, mad};
+}
+
+function analyse(txs){
+  const F = [];
+  const push = (sev, title, desc, rows) => F.push({sev, title, desc, rows: rows || []});
+  const today = txs._today || new Date();  // injectable for tests
+
+  // 1. Duplicate postings
+  const seen = new Map();
+  for (const t of txs){
+    if (t.net == null) continue;
+    const k = [t.type, t.account, t.dateRaw, t.ref, t.net.toFixed(2)].join('|');
+    (seen.get(k) || seen.set(k, []).get(k)).push(t.i);
+  }
+  const dupRows = [];
+  for (const [,ids] of seen) if (ids.length > 1) dupRows.push(...ids);
+  if (dupRows.length)
+    push('high','Possible duplicate postings',
+      'Transactions sharing the same type, account, date, reference and amount. Classic double-keyed invoice or a re-posted import batch.', dupRows);
+
+  // 2. VAT arithmetic
+  const vatRows = [];
+  for (const t of txs){
+    if (t.net == null || t.tax == null || !t.tc || !(t.tc in VAT_RATES)) continue;
+    if (!INVOICE_TYPES.includes(t.type) && !CREDIT_TYPES.includes(t.type)) continue;
+    const expect = Math.abs(t.net) * VAT_RATES[t.tc];
+    if (Math.abs(Math.abs(t.tax) - expect) > 0.02) vatRows.push(t.i);
+  }
+  if (vatRows.length)
+    push('high','VAT does not match the tax code',
+      'Tax amount disagrees with the UK rate implied by the tax code (T1 = 20%, T5 = 5%, T0/T2/T9 = nil), beyond a 2p rounding tolerance. Wrong code or manually overridden VAT.', vatRows);
+
+  // 3. Unbalanced journals
+  const jr = new Map();
+  for (const t of txs){
+    if (t.type !== 'JD' && t.type !== 'JC') continue;
+    const k = t.ref || '(no ref)';
+    const e = jr.get(k) || {sum:0, rows:[]};
+    e.sum += (t.type === 'JD' ? 1 : -1) * (t.net || 0);
+    e.rows.push(t.i);
+    jr.set(k, e);
+  }
+  for (const [ref, e] of jr){
+    if (Math.abs(e.sum) > 0.005)
+      push('high', 'Unbalanced journal ' + ref,
+        'Journal debits and credits differ by ' + fmtGBP(Math.abs(e.sum)) + '. A journal must net to zero — this one will throw the trial balance.', e.rows);
+  }
+
+  // 4. Invoice sequence gaps
+  const seqs = new Map();
+  for (const t of txs){
+    if (t.type !== 'SI') continue;
+    const m = t.ref.match(/^([A-Za-z-]*?)(\d{3,})$/);
+    if (!m) continue;
+    const e = seqs.get(m[1]) || [];
+    e.push({n:+m[2], i:t.i});
+    seqs.set(m[1], e);
+  }
+  for (const [prefix, list] of seqs){
+    if (list.length < 3) continue;
+    list.sort((a,b) => a.n - b.n);
+    const missing = [];
+    for (let k = 1; k < list.length; k++){
+      const gap = list[k].n - list[k-1].n - 1;
+      if (gap < 1 || gap > 10) continue;  // huge jumps are a different period/sequence, not a gap
+      for (let g = list[k-1].n + 1; g < list[k].n && missing.length < 20; g++) missing.push(prefix + g);
+    }
+    if (missing.length)
+      push('med','Gaps in sales invoice sequence' + (prefix ? ' “' + prefix + '”' : ''),
+        'Missing reference numbers: ' + missing.join(', ') + '. Deleted, held or unposted invoices break the audit trail.',
+        list.map(x => x.i));
+  }
+
+  // 5. Threshold skimming
+  const skimRows = [];
+  for (const t of txs){
+    if (t.net == null || !INVOICE_TYPES.includes(t.type)) continue;
+    const a = Math.abs(t.net);
+    for (const th of THRESHOLDS)
+      if (a >= th * 0.95 && a < th){ skimRows.push(t.i); break; }
+  }
+  if (skimRows.length)
+    push('med','Amounts just below common approval thresholds',
+      'Invoices within 5% under £' + THRESHOLDS.map(t=>t.toLocaleString('en-GB')).join(' / £') + '. A cluster here is the classic signature of authority-limit skimming or split invoicing.', skimRows);
+
+  // 6. Negative invoices
+  const negRows = txs.filter(t => INVOICE_TYPES.includes(t.type) && t.net != null && t.net < 0).map(t => t.i);
+  if (negRows.length)
+    push('med','Credits posted as negative invoices',
+      'Negative amounts on invoice types (SI/PI). Sage convention is a credit note (SC/PC) — negative invoices corrupt aged-debt and VAT return figures.', negRows);
+
+  // 7. Date hygiene
+  const future = [], weekend = [], stale = [], badDate = [];
+  const staleBefore = new Date(today); staleBefore.setUTCFullYear(staleBefore.getUTCFullYear() - 2);
+  for (const t of txs){
+    if (!t.date){ if (t.dateRaw) badDate.push(t.i); continue; }
+    if (t.date > today) future.push(t.i);
+    else if (t.date < staleBefore) stale.push(t.i);
+    const dow = t.date.getUTCDay();
+    if (dow === 0 || dow === 6) weekend.push(t.i);
+  }
+  if (future.length) push('high','Future-dated postings','Transactions dated after today. Period-end mispostings or fat-fingered years — these silently distort the current VAT quarter.', future);
+  if (badDate.length) push('med','Unparseable dates','Date values the parser could not read (expected dd/mm/yyyy or ISO). These rows are excluded from date-based checks.', badDate);
+  if (weekend.length) push('info','Weekend postings','Posted on a Saturday or Sunday. Fine for automated feeds; worth a glance when a manual journal lands on a Sunday night.', weekend);
+  if (stale.length) push('info','Postings older than 2 years','Very old transactions in this extract — either intentional history or a stray prior-period batch.', stale);
+
+  // 8. Reference and code hygiene
+  const noRef = txs.filter(t => INVOICE_TYPES.includes(t.type) && !t.ref).map(t => t.i);
+  if (noRef.length) push('info','Invoices without a reference','Blank references make matching against supplier statements and remittances painful.', noRef);
+  const noTc = txs.filter(t => (INVOICE_TYPES.includes(t.type) || CREDIT_TYPES.includes(t.type)) && !t.tc).map(t => t.i);
+  if (noTc.length) push('info','Missing tax codes','Invoice/credit lines with no tax code — they will fall out of the VAT return silently.', noTc);
+  const unknownTc = txs.filter(t => t.tc && /^T\d+$/.test(t.tc) && !(t.tc in VAT_RATES)).map(t => t.i);
+  if (unknownTc.length) push('info','Non-standard tax codes','Tax codes outside the common Sage set (T0/T1/T2/T4/T5/T9). Check the company’s tax code configuration.', unknownTc);
+
+  // 9. Round-sum postings
+  const roundRows = txs.filter(t => t.net != null && Math.abs(t.net) >= 500 && Math.abs(t.net) % 100 === 0 && (INVOICE_TYPES.includes(t.type) || t.type === 'JD' || t.type === 'JC')).map(t => t.i);
+  if (roundRows.length)
+    push('info','Round-sum amounts ≥ £500','Perfectly round invoices and journals are legitimate (retainers, rent) but are also where estimates and plugs hide.', roundRows);
+
+  // 10. Benford
+  const ben = benfordCalc(txs);
+  if (ben.n >= 25){
+    if (ben.mad > 0.015)
+      push('med','First digits deviate from Benford’s law',
+        'Mean absolute deviation ' + (ben.mad*100).toFixed(2) + '% across ' + ben.n + ' amounts — above the 1.5% nonconformity line (Nigrini). Not proof of anything, but the distribution is unusual enough to sample.', []);
+    else if (ben.mad > 0.012)
+      push('info','First-digit distribution is marginal',
+        'Mean absolute deviation ' + (ben.mad*100).toFixed(2) + '% across ' + ben.n + ' amounts — marginally above the acceptable-conformity band. See the Insights tab.', []);
+  }
+
+  const order = {high:0, med:1, info:2};
+  F.sort((a,b) => order[a.sev] - order[b.sev]);
+  return {findings:F, benford:ben};
+}
+
+function computeStats(txs){
+  let net = 0, tax = 0, min = null, max = null;
+  const accounts = new Map();
+  for (const t of txs){
+    if (t.net != null){ net += t.net; accounts.set(t.account || '(none)', (accounts.get(t.account || '(none)') || 0) + Math.abs(t.net)); }
+    if (t.tax != null) tax += t.tax;
+    if (t.date){ if (!min || t.date < min) min = t.date; if (!max || t.date > max) max = t.date; }
+  }
+  const top = [...accounts.entries()].sort((a,b) => b[1] - a[1]).slice(0, 8);
+  return {count:txs.length, net, tax, min, max, top};
+}
+
+/* ---------- AI model routing ----------
+   Auto mode scores the job and picks the cheapest model that can do it well:
+   findings severity + ledger size say how much there is to reason over,
+   the question's shape says how much judgement is being asked for. */
+const MODELS = {
+  fast:     {id:'claude-haiku-4-5', label:'Claude Haiku 4.5'},
+  balanced: {id:'claude-sonnet-5',  label:'Claude Sonnet 5'},
+  deep:     {id:'claude-opus-5',    label:'Claude Opus 5'}
+};
+
+function routeModel(choice, question, findings, txCount){
+  if (choice !== 'auto'){
+    return {tier:choice, model:MODELS[choice].id, label:MODELS[choice].label, why:'selected manually'};
+  }
+  const c = {high:0, med:0, info:0};
+  for (const f of findings) c[f.sev]++;
+  const ledger = Math.min(12, c.high*2 + c.med + c.info*0.5 + (txCount > 500 ? 3 : txCount > 100 ? 1 : 0));
+  let ask = 0;
+  const q = String(question||'').toLowerCase();
+  if (/\b(why|explain|prioriti|reconcil|root cause|walk (me|us) through|strateg|justif|compare|recommend|assess|materiality|risk)\b/.test(q)) ask += 6;
+  if ((q.match(/\?/g) || []).length > 1) ask += 2;
+  if (q.length > 160) ask += 2;
+  const score = ledger + ask;
+  const reasons = [];
+  reasons.push(c.high ? c.high + ' critical finding' + (c.high > 1 ? 's' : '') : 'no critical findings');
+  reasons.push(ask >= 6 ? 'analytical question' : 'simple question');
+  const tier = score >= 14 ? 'deep' : score >= 6 ? 'balanced' : 'fast';
+  return {tier, model:MODELS[tier].id, label:MODELS[tier].label,
+          why:'auto — ' + reasons.join(', ') + ' (complexity ' + Math.round(score) + '/20+)'};
+}
+
+function fmtGBP(n){
+  return '£' + Math.abs(n).toLocaleString('en-GB',{minimumFractionDigits:2, maximumFractionDigits:2});
+}
+function fmtSigned(n){ return (n < 0 ? '-' : '') + fmtGBP(n); }
+function fmtDate(d){ return d ? d.toISOString().slice(0,10) : ''; }
+
+/* ---------- demo ledger (deliberately dirty — must fire every detector) ---------- */
+const DEMO_CSV = `Type,Account,Nominal,Date,Ref,Details,Net,Tax,T/C
+SI,ACME01,4000,01/06/2026,INV1001,Consultancy retainer June,900.00,180.00,T1
+SI,ACME01,4000,03/06/2026,INV1002,Decisioning platform support,940.00,188.00,T1
+SI,BLUE02,4000,04/06/2026,INV1003,Bureau integration workshop,970.00,194.00,T1
+SI,CRED03,4001,05/06/2026,INV1004,Affordability model review,985.00,197.00,T1
+SI,BLUE02,4000,09/06/2026,INV1007,Connector regression pack,920.00,184.00,T1
+SI,ACME01,4000,10/06/2026,INV1008,Scorecard calibration,975.00,195.00,T1
+SI,CRED03,4001,11/06/2026,INV1009,CIFAS ruleset audit,930.00,186.00,T1
+SI,BLUE02,4000,12/06/2026,INV1010,TransUnion payload QA,995.00,199.00,T1
+SI,ACME01,4000,15/06/2026,INV1011,Equifax mapping review,965.00,193.00,T1
+SI,CRED03,4001,16/06/2026,INV1012,Decision engine load test,910.00,182.00,T1
+SI,NEWCO4,4000,17/06/2026,INV1013,Onboarding discovery,200.00,35.00,T1
+SI,NEWCO4,4000,18/06/2026,INV1014,Zero-rated export advice,100.00,20.00,T0
+SI,ACME01,4000,21/06/2026,INV1015,Weekend emergency support,450.00,90.00,T1
+SI,BLUE02,4000,23/06/2026,INV1016,Data quality deep dive,4995.00,999.00,T1
+SI,CRED03,4000,24/06/2026,INV1017,Platform licence Q3,5000.00,1000.00,T1
+SI,NEWCO4,4000,25/06/2026,,Ad-hoc advisory,300.00,60.00,T1
+SI,ACME01,4000,26/06/2026,INV1019,Correction line,-120.00,-24.00,T1
+SI,BLUE02,4000,15/01/2027,INV1020,Annual licence FY27,2400.00,480.00,T1
+SI,CRED03,4000,10/05/2023,INV0299,Legacy engagement closeout,850.00,170.00,T1
+SI,NEWCO4,4000,29/06/2026,INV1021,Bureau sandbox setup,640.00,128.00,
+PI,SUPP01,5000,02/06/2026,PB-4471,Cloud hosting June,980.00,196.00,T1
+PI,SUPP01,5000,02/06/2026,PB-4471,Cloud hosting June,980.00,196.00,T1
+PI,SUPP02,5000,06/06/2026,PB-4480,Data feed subscription,910.00,182.00,T1
+PI,SUPP03,7502,08/06/2026,PB-4481,Team offsite catering,240.00,12.00,T5
+PI,SUPP02,5000,13/06/2026,PB-4492,Licence true-up,9750.00,1950.00,T1
+PI,SUPP04,7100,19/06/2026,PB-4499,Serviced office rent,1500.00,300.00,T1
+PI,SUPP03,7400,20/06/2026,PB-4501,Rail travel,85.50,0.00,T0
+PI,SUPP05,7601,27/06/2026,PB-4510,Recruitment fee,24500.00,4900.00,T1
+PI,SUPP01,5000,30/06/2026,PB-4515,Overseas SaaS tool,199.00,0.00,T9
+SC,ACME01,4000,19/06/2026,CRN-88,Credit re INV1008 overbilling,150.00,30.00,T1
+PC,SUPP02,5000,22/06/2026,PCR-12,Rebate on data feed,75.00,15.00,T1
+BP,BANK01,7901,07/06/2026,DD-0607,Bank charges,45.00,0.00,T2
+BR,BANK01,4900,14/06/2026,INT-0614,Deposit interest,12.40,0.00,T9
+JD,JRNL,7000,28/06/2026,JNL-062,Payroll June gross,38500.00,0.00,T9
+JC,JRNL,2220,28/06/2026,JNL-062,Payroll June control,38500.00,0.00,T9
+JD,JRNL,8200,28/06/2026,JNL-063,Depreciation plug,500.00,0.00,T9
+JC,JRNL,0031,28/06/2026,JNL-063,Depreciation control,450.00,0.00,T9
+JD,JRNL,4905,28/06/2026,JNL-064,Deferred income release,7500.00,0.00,T9
+JC,JRNL,2103,28/06/2026,JNL-064,Deferred income control,7500.00,0.00,T9
+SI,ACME01,4000,07/03/2026,INV0987,Q1 model validation,875.00,175.00,T1
+PI,SUPP06,7503,28/06/2026,PB-4512,Client entertainment,410.00,82.00,T3
+SI,BLUE02,4000,30/06/2026,INV1022,Month-end true-up,990.00,198.00,T1
+PI,SUPP02,5000,30/06/2026,PB-4516,Compute burst charges,945.00,189.00,T1
+SI,CRED03,4001,30/06/2026,INV1023,Affordability re-run,955.00,191.00,T1
+BP,BANK01,7901,31/13/2026,DD-9999,Software subscription,29.00,5.80,T1
+`;
+/* Demo date pinning: 2026-07-15 so future/stale/weekend checks are deterministic.
+   04/06/2026 is a Thursday; 21/06/2026 (Sun), 07/06/2026 (Sun), 14/06/2026 (Sun),
+   28/06/2026 (Sun) give weekend hits; 15/01/2027 is future; 10/05/2023 is stale. */
+
+/* ================= DOM LAYER ================= */
+if (typeof document === 'undefined') return;
+
+let TXS = [], FINDINGS = [], BENFORD_R = null, STATS = null, MASK = false, ROW_SEV = {};
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function toast(msg){
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._h); toast._h = setTimeout(() => t.classList.remove('show'), 1800);
+}
+function copyText(txt, msg){
+  (navigator.clipboard ? navigator.clipboard.writeText(txt) : Promise.reject()).then(
+    () => toast(msg || 'Copied'),
+    () => { const ta = document.createElement('textarea'); ta.value = txt; document.body.appendChild(ta); ta.select();
+            try{ document.execCommand('copy'); toast(msg || 'Copied'); } catch(e){ toast('Copy failed'); } ta.remove(); });
+}
+const maskVal = s => s ? '••••••' : '';
+
+function load(text, today){
+  const r = parseInput(text);
+  const errEl = $('parseErr');
+  if (r.error){ errEl.style.display = 'block'; errEl.textContent = r.error; return false; }
+  errEl.style.display = 'none';
+  TXS = r.txs;
+  if (today) TXS._today = today;
+  const a = analyse(TXS);
+  FINDINGS = a.findings; BENFORD_R = a.benford; STATS = computeStats(TXS);
+  ROW_SEV = {};
+  for (const f of FINDINGS) for (const i of f.rows)
+    if (!(i in ROW_SEV) || f.sev === 'high') ROW_SEV[i] = f.sev;
+  renderAll();
+  $('overlay').classList.add('hidden');
+  return true;
+}
+
+function renderAll(){ renderStrip(); renderGrid(); renderFindings(); renderInsights(); }
+
+function renderStrip(){
+  const c = {high:0, med:0, info:0};
+  for (const f of FINDINGS) c[f.sev]++;
+  const period = STATS.min ? fmtDate(STATS.min) + ' → ' + fmtDate(STATS.max) : 'no dates';
+  $('strip').innerHTML =
+    '<span class="chip"><b>' + STATS.count + '</b> transactions</span>' +
+    '<span class="chip">' + esc(period) + '</span>' +
+    '<span class="chip">net <b>' + esc(fmtSigned(STATS.net)) + '</b></span>' +
+    (c.high ? '<span class="chip high click" data-goto="findings"><b>' + c.high + '</b> critical</span>' : '') +
+    (c.med ? '<span class="chip med click" data-goto="findings"><b>' + c.med + '</b> warnings</span>' : '') +
+    (c.info ? '<span class="chip info click" data-goto="findings"><b>' + c.info + '</b> info</span>' : '');
+}
+
+function renderGrid(filter){
+  filter = (filter || '').toLowerCase();
+  let shown = 0;
+  let h = '<thead><tr><th>#</th><th>Type</th><th>Date</th><th>Account</th><th>Nominal</th><th>Ref</th><th>Details</th><th style="text-align:right">Net</th><th style="text-align:right">VAT</th><th>T/C</th></tr></thead><tbody>';
+  for (const t of TXS){
+    const acct = MASK ? maskVal(t.account) : t.account;
+    const det = MASK ? maskVal(t.details) : t.details;
+    if (filter){
+      const hay = [t.type, t.dateRaw, acct, t.nominal, t.ref, det, t.net, t.tax, t.tc].join(' ').toLowerCase();
+      if (!hay.includes(filter)) continue;
+    }
+    shown++;
+    const sev = ROW_SEV[t.i];
+    h += '<tr data-i="' + t.i + '"' + (sev && sev !== 'info' ? ' class="flagged' + (sev === 'high' ? ' high' : '') + '"' : '') + '>' +
+      '<td style="color:var(--text-faint)">' + (t.i + 1) + '</td>' +
+      '<td class="typ">' + esc(t.type) + '</td>' +
+      '<td>' + esc(t.dateRaw) + '</td>' +
+      '<td class="acct' + (MASK ? ' masked' : '') + '">' + esc(acct) + '</td>' +
+      '<td>' + esc(t.nominal) + '</td>' +
+      '<td>' + esc(t.ref) + '</td>' +
+      '<td' + (MASK ? ' class="masked"' : '') + '>' + esc(det) + '</td>' +
+      '<td class="num' + (t.net != null && t.net < 0 ? ' neg' : '') + '">' + (t.net != null ? esc(fmtSigned(t.net)) : '') + '</td>' +
+      '<td class="num' + (t.tax != null && t.tax < 0 ? ' neg' : '') + '">' + (t.tax != null ? esc(fmtSigned(t.tax)) : '') + '</td>' +
+      '<td>' + esc(t.tc) + '</td></tr>';
+  }
+  h += '</tbody>';
+  $('grid').innerHTML = h;
+  $('searchInfo').textContent = filter ? shown + ' / ' + TXS.length : TXS.length + ' rows';
+}
+
+function renderFindings(){
+  $('nFindings').textContent = FINDINGS.length;
+  if (!FINDINGS.length){
+    $('tab-findings').innerHTML = '<p style="color:var(--text-dim);font-size:13px">No findings — this ledger looks clean. (Load the demo to see the engine at full stretch.)</p>';
+    return;
+  }
+  let h = '';
+  for (const f of FINDINGS){
+    h += '<div class="finding ' + f.sev + '"><h4><span class="sev ' + f.sev + '">' + f.sev + '</span>' + esc(f.title) + '</h4>' +
+      '<p>' + esc(f.desc) + '</p>';
+    if (f.rows.length){
+      h += '<div>' + f.rows.slice(0, 24).map(i => '<span class="rowLink" data-row="' + i + '">row ' + (i+1) + '</span>').join('') +
+        (f.rows.length > 24 ? '<span style="font-size:11px;color:var(--text-faint)"> +' + (f.rows.length - 24) + ' more</span>' : '') + '</div>';
+    }
+    h += '</div>';
+  }
+  $('tab-findings').innerHTML = h;
+}
+
+function renderInsights(){
+  const s = STATS, b = BENFORD_R;
+  let h = '<div class="tiles">' +
+    tile(s.count, 'transactions') +
+    tile(fmtSigned(s.net), 'net movement') +
+    tile(fmtSigned(s.tax), 'VAT') +
+    tile(s.min ? fmtDate(s.min) : '—', 'earliest posting') +
+    tile(s.max ? fmtDate(s.max) : '—', 'latest posting') +
+    tile(b.n, 'amounts in Benford sample') +
+    '</div>';
+
+  // Benford chart
+  h += '<div class="card"><h3>Benford first-digit analysis <small>— MAD ' + (b.mad*100).toFixed(2) + '% (' +
+    (b.mad > 0.015 ? 'nonconformity' : b.mad > 0.012 ? 'marginal' : b.n >= 25 ? 'acceptable' : 'sample too small') + ')</small></h3>';
+  if (b.n >= 10){
+    h += '<div class="legend"><span><span class="sw" style="background:var(--chart-observed)"></span>Observed</span>' +
+         '<span><span class="sw" style="background:var(--chart-expected);height:4px;border-radius:2px"></span>Benford expected</span></div>';
+    h += benfordSVG(b);
+    h += '<details><summary>Data table</summary><table class="benTable"><tr><th>Digit</th>' +
+      [1,2,3,4,5,6,7,8,9].map(d => '<td>' + d + '</td>').join('') + '</tr>' +
+      '<tr><th>Observed</th>' + b.observed.map(o => '<td>' + (o*100).toFixed(1) + '%</td>').join('') + '</tr>' +
+      '<tr><th>Expected</th>' + BENFORD.map(o => '<td>' + (o*100).toFixed(1) + '%</td>').join('') + '</tr>' +
+      '<tr><th>Count</th>' + b.counts.map(c => '<td>' + c + '</td>').join('') + '</tr></table></details>';
+  } else {
+    h += '<p style="font-size:12px;color:var(--text-dim)">Fewer than 10 qualifying amounts (≥ £10) — Benford analysis needs a bigger sample.</p>';
+  }
+  h += '</div>';
+
+  // Top accounts
+  if (s.top.length){
+    const maxV = s.top[0][1] || 1;
+    h += '<div class="card"><h3>Top accounts by absolute value</h3><div class="acctList">';
+    for (const [acct, v] of s.top){
+      const label = MASK ? maskVal(acct) : (acct || '(none)');
+      h += '<div><span class="bar" style="width:' + Math.max(4, Math.round(v/maxV*180)) + 'px"></span>' +
+        '<span' + (MASK ? ' class="masked" style="color:var(--pii)"' : '') + '>' + esc(label) + '</span> ' +
+        '<span style="color:var(--text-dim)">' + esc(fmtGBP(v)) + '</span></div>';
+    }
+    h += '</div></div>';
+  }
+  $('tab-insights').innerHTML = h;
+
+  function tile(v, l){ return '<div class="tile"><div class="v">' + esc(String(v)) + '</div><div class="l">' + esc(l) + '</div></div>'; }
+}
+
+function benfordSVG(b){
+  const W = 560, H = 220, padL = 38, padB = 26, padT = 10, padR = 8;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const maxY = Math.max(0.35, ...b.observed) * 1.08;
+  const y = v => padT + plotH - (v / maxY) * plotH;
+  const band = plotW / 9, barW = Math.min(34, band - 10);
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Benford first-digit distribution: observed versus expected" style="width:100%;height:auto;display:block">';
+  // gridlines + y labels
+  for (const g of [0, 0.1, 0.2, 0.3]){
+    if (g > maxY) continue;
+    s += '<line x1="' + padL + '" y1="' + y(g) + '" x2="' + (W - padR) + '" y2="' + y(g) + '" stroke="#2d333b" stroke-width="1"/>' +
+         '<text x="' + (padL - 6) + '" y="' + (y(g) + 3.5) + '" text-anchor="end" font-size="10" fill="#8b949e">' + Math.round(g*100) + '%</text>';
+  }
+  for (let d = 1; d <= 9; d++){
+    const cx = padL + band * (d - 0.5);
+    const obs = b.observed[d-1], exp = BENFORD[d-1];
+    const bh = Math.max(0, y(0) - y(obs));
+    // observed bar, rounded top, anchored to baseline
+    s += '<path d="M' + (cx - barW/2) + ' ' + y(0) +
+         ' V' + (y(obs) + 3) + ' q0 -3 3 -3 h' + (barW - 6) + ' q3 0 3 3 V' + y(0) + ' Z" fill="var(--chart-observed)">' +
+         '<title>Digit ' + d + ' — observed ' + (obs*100).toFixed(1) + '% (' + b.counts[d-1] + '), expected ' + (exp*100).toFixed(1) + '%</title></path>';
+    if (bh < 3) s += '<rect x="' + (cx - barW/2) + '" y="' + (y(0) - 1.5) + '" width="' + barW + '" height="1.5" fill="var(--chart-observed)"/>';
+    // expected marker
+    s += '<rect x="' + (cx - barW/2 - 3) + '" y="' + (y(exp) - 2) + '" width="' + (barW + 6) + '" height="4" rx="2" fill="var(--chart-expected)"/>';
+    s += '<text x="' + cx + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11" fill="#8b949e">' + d + '</text>';
+  }
+  s += '<line x1="' + padL + '" y1="' + y(0) + '" x2="' + (W - padR) + '" y2="' + y(0) + '" stroke="#2d333b" stroke-width="1"/></svg>';
+  return s;
+}
+
+/* ---------- AI briefing ---------- */
+
+function buildBriefing(){
+  const s = STATS, b = BENFORD_R;
+  const L = [];
+  L.push('# Ledger X-Ray briefing');
+  L.push('');
+  L.push('Source: ' + s.count + ' transactions, ' + (s.min ? fmtDate(s.min) + ' to ' + fmtDate(s.max) : 'no parseable dates') + '.');
+  L.push('Net movement ' + fmtSigned(s.net) + '; VAT ' + fmtSigned(s.tax) + '.');
+  if (MASK) L.push('Account names and narrative are masked at source.');
+  L.push('');
+  L.push('## Findings (' + FINDINGS.length + ')');
+  for (const f of FINDINGS){
+    L.push('- [' + f.sev.toUpperCase() + '] ' + f.title + ' — ' + f.desc + (f.rows.length ? ' (rows: ' + f.rows.slice(0, 15).map(i=>i+1).join(', ') + (f.rows.length > 15 ? '…' : '') + ')' : ''));
+  }
+  if (b.n >= 10){
+    L.push('');
+    L.push('## Benford first-digit distribution (n=' + b.n + ', MAD ' + (b.mad*100).toFixed(2) + '%)');
+    L.push('digit,observed_pct,expected_pct,count');
+    for (let d = 1; d <= 9; d++)
+      L.push(d + ',' + (b.observed[d-1]*100).toFixed(1) + ',' + (BENFORD[d-1]*100).toFixed(1) + ',' + b.counts[d-1]);
+  }
+  L.push('');
+  L.push('## Top accounts by absolute value');
+  for (const [acct, v] of s.top) L.push('- ' + (MASK ? '(masked)' : (acct || '(none)')) + ': ' + fmtGBP(v));
+  L.push('');
+  L.push('## Role');
+  L.push('You are assisting a UK financial-services QA analyst reviewing a Sage ledger extract. Prioritise the findings by audit risk, explain the likely root cause of each in plain English, and suggest the single next verification step per finding. Be specific and concise; UK accounting and VAT conventions apply.');
+  return L.join('\n');
+}
+
+async function askClaude(){
+  const key = $('aiKey').value.trim();
+  const q = $('aiQ').value.trim();
+  const brief = $('brief').value.trim();
+  const out = $('aiOut');
+  if (!brief){ toast('Generate the briefing pack first'); return; }
+  if (!key){ toast('Paste your Anthropic API key'); return; }
+  if (!q){ toast('Type a question'); return; }
+  const route = routeModel($('aiModel').value, q, FINDINGS, TXS.length);
+  $('btnAsk').disabled = true;
+  $('aiStatus').innerHTML = '<span class="spin"></span>Asking ' + esc(route.label) + '…';
+  out.style.display = 'none'; out.classList.remove('err');
+  $('aiMeta').style.display = 'none';
+  try{
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{
+        'content-type':'application/json',
+        'x-api-key': key,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body: JSON.stringify({
+        model: route.model,
+        max_tokens:2048,
+        messages:[{role:'user', content: brief + '\n\n---\nAnalyst question: ' + q}]
+      })
+    });
+    const data = await res.json();
+    if (!res.ok){
+      const msg = data && data.error ? data.error.message : ('HTTP ' + res.status);
+      throw new Error(msg);
+    }
+    if (data.stop_reason === 'refusal'){
+      out.classList.add('err');
+      out.textContent = 'Claude declined this request' + (data.stop_details && data.stop_details.explanation ? ': ' + data.stop_details.explanation : '.') ;
+    } else {
+      const text = (data.content || []).filter(bk => bk.type === 'text').map(bk => bk.text).join('\n');
+      out.textContent = text || '(empty response)';
+    }
+    $('aiMeta').textContent = 'Answered by ' + route.label + ' (' + route.why + ')';
+    $('aiMeta').style.display = 'block';
+    out.style.display = 'block';
+  } catch(e){
+    out.classList.add('err');
+    out.textContent = 'Request failed: ' + e.message + '\n\nIf this is a CORS or key error, check the key starts sk-ant- and has API access enabled.';
+    out.style.display = 'block';
+  } finally {
+    $('btnAsk').disabled = !$('aiConsent').checked;
+    $('aiStatus').textContent = '';
+  }
+}
+
+/* ---------- events ---------- */
+
+function jumpToRow(i){
+  const tr = document.querySelector('tr[data-i="' + i + '"]');
+  if (!tr){ $('search').value = ''; renderGrid(); }
+  const el = document.querySelector('tr[data-i="' + i + '"]');
+  if (!el) return;
+  document.querySelectorAll('tr.hot').forEach(x => x.classList.remove('hot'));
+  el.classList.add('hot');
+  el.scrollIntoView({block:'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+}
+
+document.addEventListener('click', e => {
+  const rl = e.target.closest('[data-row]');
+  if (rl){ jumpToRow(+rl.dataset.row); return; }
+  const chip = e.target.closest('[data-goto]');
+  if (chip){ switchTab(chip.dataset.goto); return; }
+});
+
+function switchTab(name){
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tabBody').forEach(b => b.classList.toggle('active', b.id === 'tab-' + name));
+}
+$('tabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-tab]');
+  if (b) switchTab(b.dataset.tab);
+});
+
+let searchT;
+$('search').addEventListener('input', () => {
+  clearTimeout(searchT);
+  searchT = setTimeout(() => renderGrid($('search').value.trim()), 120);
+});
+
+$('btnMask').addEventListener('click', () => {
+  MASK = !MASK;
+  $('btnMask').textContent = 'Mask: ' + (MASK ? 'on' : 'off');
+  $('btnMask').classList.toggle('on', MASK);
+  renderGrid($('search').value.trim());
+  renderInsights();
+  if ($('brief').value) { $('brief').value = buildBriefing(); }
+});
+
+function loadDemo(){
+  $('paste').value = DEMO_CSV;
+  load(DEMO_CSV, new Date(Date.UTC(2026, 6, 15)));  // pinned so the demo is deterministic
+  toast('Demo ledger loaded — deliberately dirty');
+}
+$('btnDemo').addEventListener('click', loadDemo);
+$('btnOverlayDemo').addEventListener('click', loadDemo);
+$('btnAnalyse').addEventListener('click', () => { if (load($('paste').value)) toast('Ledger analysed'); });
+$('btnPaste').addEventListener('click', () => $('overlay').classList.remove('hidden'));
+$('btnOverlayClose').addEventListener('click', () => $('overlay').classList.add('hidden'));
+
+function loadFromFile(file){
+  const rd = new FileReader();
+  rd.onload = () => { $('paste').value = rd.result; if (load(rd.result)) toast(file.name + ' analysed'); else $('overlay').classList.remove('hidden'); };
+  rd.readAsText(file);
+}
+$('btnUpload').addEventListener('click', () => $('fileInput').click());
+$('btnOverlayUpload').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', e => { if (e.target.files[0]) loadFromFile(e.target.files[0]); e.target.value = ''; });
+
+let dragDepth = 0;
+window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; $('dropVeil').classList.remove('hidden'); });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0){ dragDepth = 0; $('dropVeil').classList.add('hidden'); } });
+window.addEventListener('drop', e => {
+  e.preventDefault(); dragDepth = 0; $('dropVeil').classList.add('hidden');
+  if (e.dataTransfer.files[0]) loadFromFile(e.dataTransfer.files[0]);
+});
+
+$('btnBrief').addEventListener('click', () => {
+  if (!TXS.length){ toast('Load a ledger first'); return; }
+  $('brief').value = buildBriefing();
+  toast('Briefing pack generated');
+});
+$('btnCopyBrief').addEventListener('click', () => {
+  if (!$('brief').value){ toast('Nothing to copy yet'); return; }
+  copyText($('brief').value, 'Briefing copied');
+});
+$('btnDlBrief').addEventListener('click', () => {
+  if (!$('brief').value){ toast('Nothing to download yet'); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([$('brief').value], {type:'text/markdown'}));
+  a.download = 'ledger-xray-briefing.md';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+$('aiConsent').addEventListener('change', e => { $('btnAsk').disabled = !e.target.checked; });
+$('btnAsk').addEventListener('click', askClaude);
+
+})();
+</script>
+</body>
+</html>

@@ -22,9 +22,23 @@ A single-file, zero-dependency, fully client-side JSON inspection webapp for dat
 - **Exports** — flattened-leaves CSV, and a Markdown findings report (PII values masked unless you explicitly confirm otherwise) ready for a Jira ticket or Confluence page.
 - **Demo payload** — deliberately dirty; triggers every built-in detector and every example rule, so you can see the whole engine at a glance.
 
+## Sage X-Ray — Ledger Workbench (`sage.html`)
+
+A sister app in the same file, same rules: single-file, zero-dependency, fully client-side — built for clients running **Sage**. Paste or drop a Sage 50 audit-trail/transaction CSV (headers matched fuzzily, any column order) or Sage Business Cloud API JSON, and a ledger-specific quality engine scans it:
+
+- **15 detector families** — duplicate postings, VAT-vs-tax-code arithmetic (T0/T1/T2/T5/T9 at UK rates), unbalanced journals, sales-invoice sequence gaps, amounts skimming just below £1k/£5k/£10k/£25k approval thresholds, credits posted as negative invoices, future-dated / weekend / stale / unparseable dates, missing references and tax codes, round-sum postings, and a **Benford's-law first-digit analysis** (Nigrini MAD bands) with an inline chart.
+- **Findings link to rows** — click a finding to jump to and highlight the offending transactions; flagged rows are tinted by severity in the grid.
+- **Mask toggle** — hides account names and narrative across the grid, insights and every export, so screenshots and briefs are safe to share.
+- **AI briefing pack** — one click builds a Markdown brief (totals, findings, Benford table, top accounts, analyst instructions) ready to paste into any assistant the client permits. Built locally; respects the mask.
+- **Ask Claude (optional, BYO key)** — behind an explicit consent checkbox, sends *only* the briefing plus your question directly from the browser to the Anthropic API. The key lives in memory only. Everything else stays offline, same as JSON X-Ray.
+- **Complexity-aware model routing** — Auto mode weighs finding severity, ledger size and how analytical your question is, then routes it to Claude Haiku 4.5 (quick lookups), Sonnet 5 (moderate) or Opus 5 (judgement calls) — cheapest model that can do the job, with the choice and reasoning shown on every answer. Manual override available.
+- **Demo ledger** — deliberately dirty; fires all 15 detector families.
+
+Open `sage.html` — it deploys alongside `index.html` on the same Pages site.
+
 ## Run it
 
-Open `index.html` in any modern browser. That's it.
+Open `index.html` (payloads) or `sage.html` (ledgers) in any modern browser. That's it.
 
 ## Deploy to GitHub Pages
 

@@ -12,6 +12,7 @@ A single-file, zero-dependency, fully client-side JSON inspection webapp aimed a
 
 ```
 index.html                    ← the entire app (HTML + CSS + JS in one file)
+sage.html                     ← sister app: Sage X-Ray — Ledger Workbench (same one-file rules)
 CLAUDE.md                     ← this file
 README.md                     ← user-facing docs + Pages setup
 .github/workflows/pages.yml   ← GitHub Pages deploy (publishes repo root on push to main)
@@ -130,6 +131,55 @@ No test framework. Manual smoke test = load the built-in demo payload (`btnDemo`
 10. Click a tree key → "Path copied" toast; click a masked value → blocked with a toast.
 11. Beautify/Minify copy parseable JSON; A→Z re-orders the tree and the copied output; with mask on, copied output has `••••••` for PII values and untouched non-PII values.
 12. `node --check` passes on the extracted script block.
+
+## Sister app: Sage X-Ray — Ledger Workbench (`sage.html`)
+
+Same architecture rules as `index.html`: one file, one IIFE, strict mode, vanilla JS, design tokens shared with JSON X-Ray, `esc()` on everything rendered, UK English. Built for the client's Sage estate.
+
+**Script structure** (matters for testing): the IIFE is split by a
+`/* ================= DOM LAYER ================= */` marker. Everything above it is pure
+(parsing + analysis, no DOM access) and is exercised headlessly by slicing the script at the
+marker — keep new detectors above the marker and DOM code below it.
+
+Key pure functions: `parseCSV` / `mapColumns` (fuzzy header aliases in `COL_ALIASES`),
+`parseInput` (CSV or Sage Business Cloud JSON — arrays, `$items`, `items`, `transactions`;
+nested objects flattened), `parseDate` (UK dd/mm/yyyy + ISO), `normaliseTaxCode`
+(T-codes + Business Cloud rate names), `analyse` (the quality engine), `benfordCalc`
+(Nigrini MAD), `computeStats`. `analyse` reads an injectable clock from `txs._today` so the
+demo and tests are deterministic (demo pins 2026-07-15).
+
+**Detector families (15)** — the demo ledger must fire every one: duplicate postings ·
+VAT-vs-tax-code arithmetic · unbalanced journals · SI sequence gaps (per-pair gaps ≤10 only) ·
+threshold skimming (£1k/£5k/£10k/£25k, 5% band) · negative invoices · future-dated ·
+unparseable dates · weekend postings · stale (>2y) · missing references · missing tax codes ·
+non-standard tax codes · round sums ≥£500 · Benford deviation (needs n≥25; med >1.5% MAD,
+info >1.2%).
+
+**AI boundary — read carefully.** The "never transmit payload data" rule holds for sage.html
+with one deliberate, explicit exception: the **Ask Claude** button on the AI Copilot tab sends
+the generated briefing text + the user's question to `api.anthropic.com`, and only after the
+user pastes their own key AND ticks the consent checkbox. The key is held in a form field
+only — never persisted. Never widen this: no auto-send, no telemetry, no other endpoints, no
+key storage. The briefing itself is built locally and respects `MASK`.
+
+**Model routing.** `routeModel(choice, question, findings, txCount)` (pure layer) picks the
+model. Manual tiers: Fast = `claude-haiku-4-5`, Balanced = `claude-sonnet-5`, Deep =
+`claude-opus-5`. Auto scores ledger complexity (severity-weighted findings, capped at 12,
+plus a size bump) plus question shape (analytical keywords, multiple questions, length) and
+routes ≥14 → deep, ≥8 → balanced, else fast. The chosen model and the reason are always
+surfaced to the user (`#aiMeta`). Keep routing logic in the pure layer.
+
+**Smoke test (sage.html)** after any change:
+
+1. Demo loads; strip shows 4 critical / 5 warnings / 6 info; all 15 detector families appear.
+2. Click a finding row-link → grid scrolls, row highlighted.
+3. Mask toggle hides Account + Details in grid, top-accounts list, and regenerated briefing.
+4. Insights: Benford chart renders with observed bars + expected markers; data table opens.
+5. Upload and drag-and-drop both load a `.csv`; a JSON array of Business Cloud-style records parses.
+6. AI tab: briefing generates, Copy/Download work; Ask button stays disabled until consent
+   ticked; model selector defaults to Auto and the answer is annotated with the routed model.
+7. `node --check` passes on the extracted script block; the pure layer runs headless when
+   sliced at the DOM-layer marker.
 
 ## Deployment
 
