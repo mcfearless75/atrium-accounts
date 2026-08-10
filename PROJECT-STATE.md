@@ -47,6 +47,11 @@ parallel run is **not possible** in the window. Consequences and required action
 - `index.html` — **Atrium home dashboard**: module cards, the "getting off Sage" running
   order, privacy footer. Every module carries an identical shared app bar. The former
   `index.html` (JSON X-Ray, payload workbench) is now `json.html`.
+- `help.html` — **Atrium Help**, the page the client will actually live in. Task-first
+  "how do I…?" guide: 17 answers phrased as jobs, each with what the same job was called
+  in Sage, plus a Sage→ERPNext translation table. Search matches the whole entry (so
+  "refund" reaches the credit-note answer), ticks persist in localStorage, deep links
+  open one answer. **PR #10 open, not yet merged.**
 - `sage.html` — Sage X-Ray (ledger workbench): 21 detector families, Benford analysis,
   AI briefing pack, consent-gated BYO-key Ask Claude with complexity model routing.
   Merged in PR #3, live on Pages. **Adversarially audited across four dimensions**
@@ -87,6 +92,16 @@ if `atrium-accounts` is refused. Live URLs are now
 `mcfearless75.github.io/atrium-accounts/{index,sage,migrate,bom}.html`.
 
 ## In flight / next steps
+
+- **Merge PR #10** (help.html). Nothing blocking it — no CI on this repo beyond the Pages
+  deploy on `main`.
+- **Walk help.html against the client's real ERPNext instance once it exists.** The steps
+  deliberately say what to *search for* rather than which menu to click, because sidebar
+  wording drifts between versions — but they should still be checked against real screens
+  and tightened where they are vaguer than they need to be.
+- **The VAT entry in help.html stops short on purpose.** It says "file it through whichever
+  route we set up for you at cutover" and tells the user not to do the first quarter alone,
+  because the MTD filing path is not settled. Fill that in once it is.
 
 - PR #6 open (draft): the Atrium shell plus the BOM costing fixes.
 - All four accounting-side jobs are done: every app has a committed suite
