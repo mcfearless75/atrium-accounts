@@ -14,6 +14,7 @@ A single-file, zero-dependency, fully client-side JSON inspection webapp aimed a
 index.html                    ← the entire app (HTML + CSS + JS in one file)
 sage.html                     ← sister app: Sage X-Ray — Ledger Workbench (same one-file rules)
 migrate.html                  ← sister app: Migration X-Ray — Sage 50 → ERPNext (same one-file rules)
+bom.html                      ← sister app: BOM X-Ray — Bill of Materials Workbench (same one-file rules)
 CLAUDE.md                     ← this file
 README.md                     ← user-facing docs + Pages setup
 .claude/skills/               ← project skills: xray-conventions, sage-migration
@@ -235,6 +236,43 @@ rejects malformed amounts; accepts `(1,250.00)` bracket negatives), `reconcile`/
 3. Reconcile demo pair → 2 deltas + 1 Sage-only account, report downloads as .md.
 4. Checklist ticks persist across reload and reset works.
 5. `node --check` passes; pure layer runs headless when sliced at the DOM-layer marker.
+
+## Sister app: BOM X-Ray — Bill of Materials Workbench (`bom.html`)
+
+Same one-file/IIFE/pure-DOM-split rules. Analyses multi-level bills of materials from
+Sage Manufacturing, ERPNext or spreadsheet exports. Five views: **Overview** (default —
+KPIs, attention list, rolled-up cost per product, most-used components, cost make-up),
+**Structure** (explodable tree), **Issues**, **Where used**, **Load**.
+
+Key pure functions: `parseBOM` (fuzzy headers via `BOM_ALIASES`; one row per parent →
+component line), `buildGraph` (nodes with `children`/`parents`, plus `uoms`/`costs` Sets so
+contradictions across lines are catchable), `findCycles` (DFS three-colour; returns every
+distinct cycle), `rollUpCosts` (leaves upward, qty × cost × scrap; **cycle members and any
+assembly with an incomplete branch resolve to `null`, never a fabricated number**),
+`maxDepth`, `whereUsed` (multi-level upward walk, cycle-safe), `analyseBOM`, `toERPNextBOM`.
+
+**Costing rule that must not be relaxed:** a roll-up is either complete or `null`. Never
+substitute zero for a missing component cost — an understated product cost that looks
+authoritative is worse than an obvious gap. The UI shows "no roll-up" and names the reason.
+
+**Detector families (15)** — the demo BOM must fire every one: circular references ·
+conflicting units for one part · conflicting costs for one part · unreadable/missing
+quantities · negative quantities · zero quantities · purchased parts with no cost ·
+parts costed at zero · stated cost vs rolled-up cost drift · obsolete parts on live BOMs ·
+duplicate component lines on one parent · missing units of measure · missing descriptions ·
+deep nesting (≥4 levels) · single-component assemblies.
+
+**Smoke test (bom.html)** after any change:
+
+1. Demo loads and lands on Overview; strip shows 7 blocking / 5 warnings / 3 info; all 15
+   families appear on Issues.
+2. Overview: two products show a rolled-up cost, FG-BIKE-02 is named as incomplete with the
+   reason; cost make-up bars render.
+3. Structure: tree expands/collapses; the circular branch is outlined and stops with
+   "circular — stopped"; obsolete and no-qty badges show.
+4. Clicking any code jumps to Where used; RM-BEARING resolves 3 parent paths.
+5. All three exports download and re-parse; `bom_import.csv` has one row per assembly.
+6. `node --check` passes; pure layer runs headless when sliced at the DOM-layer marker.
 
 ## Deployment
 

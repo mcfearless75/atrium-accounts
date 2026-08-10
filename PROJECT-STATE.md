@@ -49,7 +49,7 @@ parallel run is **not possible** in the window. Consequences and required action
   AI briefing pack, consent-gated BYO-key Ask Claude with complexity model routing.
   Merged in PR #3, live on Pages.
 - `migrate.html` — Migration X-Ray (Sage → ERPNext): convert exports to ERPNext import
-  packs, parallel-run reconciliation, cutover checklist. **Draft PR #4 open.**
+  packs, parallel-run reconciliation, cutover checklist. Merged in PR #4, live.
   Adversarially reviewed (15 agents): 12 defects found and fixed, three of them
   critical false-clean reconciliation bugs. 17-case headless regression suite added —
   keep it passing; the reconciliation "clean" verdict gates cutover, so any change that
@@ -59,21 +59,27 @@ parallel run is **not possible** in the window. Consequences and required action
 - Client proposal artifact (ERPNext recommendation, MTD plan, costs, risks, phases):
   https://claude.ai/code/artifact/095882f4-b392-48a4-9c02-87fa91124859
 
+- `bom.html` — BOM X-Ray: multi-level BOM analysis, cycle detection, cost roll-up,
+  where-used, ERPNext BOM export. **PR open, not yet merged.**
+
+**Repo rename is done:** `Json` → `atrium-accounts`. Note the MCP GitHub tools in a
+session scoped to the old name still work via GitHub's API redirect — pass `repo: "json"`
+if `atrium-accounts` is refused. Live URLs are now
+`mcfearless75.github.io/atrium-accounts/{index,sage,migrate,bom}.html`.
+
 ## In flight / next steps
 
-- Draft PR #4 awaiting review/merge: https://github.com/mcfearless75/Json/pull/4
-- **Repo rename decided: `Json` → `atrium-accounts`.** Must be done by PaulMc in the
-  GitHub UI (Settings → General → Repository name) — no MCP tool exposes repo rename
-  and this session has no direct GitHub API access. After the rename the Pages URLs
-  become `mcfearless75.github.io/atrium-accounts/{sage,migrate}.html`; the old Pages
-  URLs stop working (GitHub redirects repo URLs but not project Pages URLs). Local
-  clone remote then needs `git remote set-url`.
+- Merge the BOM X-Ray PR.
+- Run the `migration-auditor` agent against `bom.html`'s pure layer — the ledger and
+  migration tools have both been adversarially reviewed; the BOM cost roll-up has not,
+  and wrong costings are exactly the failure this project cannot afford.
+- ERPNext import column headers (both `migrate.html` and `bom.html`) are best-effort
+  against v15 Data Import templates — **must be verified against the client's live
+  instance in Phase 0** before bulk import.
 - PaulMc wants a local clone under `C:\Users\LAPTOP80\Projects` for backup.
-- ERPNext import column headers are best-effort against v15 Data Import templates —
-  **must be verified against the client's live instance in Phase 0** before bulk import.
-- Candidate next build: **BOM X-Ray** (circular refs, cost roll-up verification, orphan
-  components, obsolete parts on live BOMs) — works off CSV today, becomes the live BOM
-  quality module post-migration.
+- Remaining modules from the client's wish-list not yet built: invoicing, stock taking,
+  inventory management. These are ERPNext modules rather than X-Ray tools — the X-Ray
+  layer's job is quality assurance over them, not replacing them.
 
 ## Model policy
 
