@@ -377,15 +377,22 @@ header alias to decide which convention applies; never test `OBSOLETE_RE` direct
 
 ## Testing beyond the smoke tests
 
-`tests/bom.test.mjs` (81 assertions) and `tests/sage.test.mjs` (116) are the committed
-suites. Each slices its app at the DOM-layer marker, evaluates the pure half in a `vm`
-context with no `document`, and asserts against the exact inputs that broke each fixed
-defect. Run them with `node tests/<app>.test.mjs`.
+Three committed suites, one per accounting app: `tests/bom.test.mjs` (81 assertions),
+`tests/sage.test.mjs` (116) and `tests/migrate.test.mjs` (126). Each slices its app at the
+DOM-layer marker, evaluates the pure half in a `vm` context with no `document`, and asserts
+against the exact inputs that broke each fixed defect. Run them with
+`node tests/<app>.test.mjs`. Never write a throwaway harness in a scratch directory — an
+earlier `migrate.html` suite was written that way and was simply gone by the next session.
 
-`migrate.html` still has none. Its suite was written into a scratch directory in an earlier
-session and is gone, so its 17 fixed defects — three of them false-clean reconciliation bugs
-that gate cutover — cannot currently be re-checked. Write it in the shape of the two above;
-never write a throwaway harness again.
+**A suite that has never failed has not been shown to work.** `tests/migrate.test.mjs`
+passed on its first run, which is exactly when to distrust it, so it was mutation-tested:
+ten guards were broken one at a time (`parseMoney` accepting `(-5.00)`, the transaction key
+reverting to absolute amounts, `warnings` no longer blocking a clean verdict, journal legs
+left unrounded, quotes opening mid-cell, and so on) and **all ten mutations were caught**.
+Do the same after adding a block of assertions — passing is not evidence.
+
+`json.html` has no suite. It is the lowest-stakes app (payload QA, not client accounting
+data) and has never been audited.
 
 ## Deployment
 
