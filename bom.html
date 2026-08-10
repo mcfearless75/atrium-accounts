@@ -106,6 +106,8 @@ header{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var
 .rank .track{display:block;background:var(--bg);border-radius:4px;height:9px;overflow:hidden}
 .rank .fill{display:block;height:100%;border-radius:4px;background:var(--chart-a)}
 .rank .fill.b{background:var(--chart-b)}
+.rank .fill.neg{background:var(--high)}
+.rank .amt.neg{color:var(--high)}
 .rank .amt{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text-dim);white-space:nowrap}
 
 /* tree */
@@ -139,9 +141,28 @@ table.data tr.bad td{background:var(--high-soft)}
 #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--bg-raise2);border:1px solid var(--accent);color:var(--text);border-radius:20px;padding:7px 18px;font-size:13px;z-index:80;opacity:0;transition:opacity .2s;pointer-events:none}
 #toast.show{opacity:1}
 @media (prefers-reduced-motion:reduce){#toast{transition:none}}
+
+/* shared product bar — identical in every module */
+.appbar{display:flex;align-items:center;gap:20px;padding:0 16px;background:#11161d;border-bottom:1px solid var(--border);flex-wrap:wrap;flex:none}
+.appbar .brand{font-weight:700;font-size:14px;letter-spacing:-.2px;color:var(--text);padding:9px 0;white-space:nowrap;text-decoration:none}
+.appbar .brand:hover{color:var(--accent)}
+.appbar .brand span{color:var(--accent)}
+.appbar nav{display:flex;gap:2px;flex-wrap:wrap}
+.appbar nav a{padding:9px 12px;font-size:13px;font-weight:500;color:var(--text-dim);border-bottom:2px solid transparent;white-space:nowrap;text-decoration:none}
+.appbar nav a:hover{color:var(--text)}
+.appbar nav a.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.appbar .env{margin-left:auto;font-size:10.5px;color:var(--text-faint);letter-spacing:.05em;padding:9px 0;white-space:nowrap}
+@media (max-width:640px){.appbar .env{display:none}}
 </style>
 </head>
 <body>
+
+<div class="appbar">
+  <a class="brand" href="index.html">Atrium<span>.</span></a>
+  <nav><a href="index.html">Home</a><a href="sage.html">Ledger</a><a href="bom.html" class="on">Bills of materials</a><a href="migrate.html">Migration</a><a href="json.html">Payloads</a></nav>
+  <span class="env">100% CLIENT-SIDE</span>
+</div>
+
 
 <header>
   <div class="logo">BOM <em>X-Ray</em><small>BILL OF MATERIALS WORKBENCH · 100% CLIENT-SIDE</small></div>
@@ -150,8 +171,6 @@ table.data tr.bad td{background:var(--high-soft)}
     <button id="btnDemo">Demo</button>
     <button id="btnUpload">Upload BOM</button>
     <button id="btnClear">Clear</button>
-    <a href="sage.html" style="font-size:12px">Sage X-Ray →</a>
-    <a href="migrate.html" style="font-size:12px">Migration X-Ray →</a>
   </div>
 </header>
 
@@ -225,7 +244,12 @@ function parseNum(s){
   let t = String(s).replace(/[£$\s]/g,'');
   let neg = false;
   if (/^\(.*\)$/.test(t)){ neg = true; t = t.slice(1,-1); }
-  t = t.replace(/,/g,'');
+  // Commas must be genuine thousands separators. "9,50" is a European decimal comma
+  // or a typo — stripping it blindly turns 9.50 into 950, so refuse it instead.
+  if (t.indexOf(',') !== -1){
+    if (!/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) return null;
+    t = t.replace(/,/g,'');
+  }
   if (!/^-?(\d+\.?\d*|\.\d+)$/.test(t)) return null;
   if (neg && t[0] === '-') return null;
   const n = parseFloat(t);
@@ -245,15 +269,28 @@ const BOM_ALIASES = {
 };
 
 function mapHeaders(headers, aliases){
-  const map = {}, norm = headers.map(normKey);
+  const map = {}, matched = {}, norm = headers.map(normKey);
   for (const f in aliases) for (const a of aliases[f]){
     const i = norm.indexOf(a);
-    if (i !== -1){ map[f] = i; break; }
+    if (i !== -1){ map[f] = i; matched[f] = a; break; }
   }
+  Object.defineProperty(map, '_alias', {value: matched, enumerable: false});
   return map;
 }
 
 const OBSOLETE_RE = /^(obsolete|discontinued|inactive|disabled|dead|superseded|do ?not ?use|end ?of ?life|eol)$/i;
+const TRUTHY_RE = /^(y|yes|t|true|1|active|live)$/i;
+const FALSY_RE  = /^(n|no|f|false|0)$/i;
+
+// A status column named "Active" or "Disabled" carries a boolean, not a lifecycle word:
+// under "Active", the value N means obsolete — which OBSOLETE_RE would never match.
+function isObsoleteStatus(status, alias){
+  const s = String(status || '').trim();
+  if (!s) return false;
+  if (alias === 'active')   return FALSY_RE.test(s) || OBSOLETE_RE.test(s);
+  if (alias === 'disabled') return TRUTHY_RE.test(s) ? !/^(active|live)$/i.test(s) : OBSOLETE_RE.test(s);
+  return OBSOLETE_RE.test(s);
+}
 
 function parseBOM(text){
   text = String(text||'').trim();
@@ -264,24 +301,28 @@ function parseBOM(text){
   if (!('parent' in map) || !('child' in map))
     return {error:'Could not find the parent and component columns. Headers seen: ' + rows[0].join(', ') +
       ' — need one column naming the assembly and one naming the component it consumes.'};
-  const lines = [];
+  const lines = [], orphans = [];
   rows.slice(1).forEach((r, i) => {
     const g = f => f in map ? String(r[map[f]] ?? '').trim() : '';
     const parent = g('parent'), child = g('child');
     if (!parent && !child) return;
-    lines.push({
+    const rec = {
       i, parent, child,
       desc: g('desc'),
       qtyRaw: g('qty'), qty: parseNum(g('qty')),
       uom: g('uom'),
       costRaw: g('cost'), cost: parseNum(g('cost')),
-      status: g('status'),
-      scrap: parseNum(g('scrap')),
-      parentCost: parseNum(g('parentCost'))
-    });
+      status: g('status'), statusAlias: map._alias.status || 'status',
+      scrapRaw: g('scrap'), scrap: parseNum(g('scrap')),
+      parentCostRaw: g('parentCost'), parentCost: parseNum(g('parentCost'))
+    };
+    // Half-populated rows cannot join the graph. Keep them so they can be reported —
+    // a row dropped without a count is data loss the user never finds out about.
+    if (!parent || !child) orphans.push(rec);
+    lines.push(rec);
   });
   if (!lines.length) return {error:'No BOM lines found below the header row.'};
-  return {lines};
+  return {lines, orphans};
 }
 
 /* ---------- graph model ---------- */
@@ -289,7 +330,9 @@ function parseBOM(text){
 function buildGraph(lines){
   const nodes = new Map();   // code → {code, desc, uom, status, cost, children:[], parents:[]}
   const node = code => {
-    if (!nodes.has(code)) nodes.set(code, {code, desc:'', uom:'', status:'', cost:null, children:[], parents:[], uoms:new Set(), costs:new Set()});
+    if (!nodes.has(code)) nodes.set(code, {code, desc:'', uom:'', status:'', statusAlias:'status',
+      cost:null, statedCost:null, children:[], parents:[],
+      uoms:new Set(), costs:new Set(), statuses:new Set(), statedCosts:new Set()});
     return nodes.get(code);
   };
   for (const l of lines){
@@ -297,14 +340,21 @@ function buildGraph(lines){
     const p = node(l.parent), c = node(l.child);
     if (l.desc && !c.desc) c.desc = l.desc;
     if (l.uom && !c.uom) c.uom = l.uom;
-    if (l.status && !c.status) c.status = l.status;
+    if (l.status && !c.status){ c.status = l.status; c.statusAlias = l.statusAlias; }
     if (l.cost != null && c.cost == null) c.cost = l.cost;
     // Track every distinct spelling so contradictions across lines can be caught —
-    // the same part costed or measured two ways is a real and dangerous defect.
+    // the same part costed, measured or flagged two ways is a real and dangerous defect.
     if (l.uom) c.uoms.add(l.uom.trim().toLowerCase());
     if (l.cost != null) c.costs.add(l.cost);
-    if (l.parentCost != null && p.cost == null) p.statedCost = l.parentCost;
-    p.children.push({code:l.child, qty:l.qty, line:l.i, scrap:l.scrap});
+    if (l.status) c.statuses.add(l.status.trim().toLowerCase());
+    if (l.parentCost != null){
+      if (p.statedCost == null) p.statedCost = l.parentCost;
+      p.statedCosts.add(l.parentCost);
+    }
+    // Scrap has to be either absent, or a usable percentage. Anything else means the
+    // true consumption is unknown, and the roll-up must refuse rather than guess.
+    const scrapBad = (l.scrapRaw || '') !== '' && (l.scrap == null || l.scrap < 0 || l.scrap >= 100);
+    p.children.push({code:l.child, qty:l.qty, line:l.i, scrap:l.scrap, scrapRaw:l.scrapRaw, scrapBad});
     c.parents.push({code:l.parent, qty:l.qty, line:l.i});
   }
   const roots = [...nodes.values()].filter(n => n.parents.length === 0 && n.children.length > 0);
@@ -335,10 +385,60 @@ function findCycles(graph){
   return cycles;
 }
 
+// The DFS above names one cycle per back-edge, which reads well but does not enumerate
+// every node caught in a tangle: a node can sit inside a strongly-connected component
+// without ever being on the particular path a back-edge closed. Tarjan gives the complete
+// membership, and membership is what costing must exclude.
+function cyclicNodes(graph){
+  const index = new Map(), low = new Map(), onStack = new Set(), stack = [];
+  const members = new Set();
+  let next = 0;
+  const strongconnect = start => {
+    // Iterative — real BOMs nest deep enough to blow the call stack on recursion.
+    const work = [[start, 0]];
+    index.set(start, next); low.set(start, next); next++;
+    stack.push(start); onStack.add(start);
+    while (work.length){
+      const frame = work[work.length - 1];
+      const [code, i] = frame;
+      const kids = graph.nodes.get(code).children;
+      if (i < kids.length){
+        frame[1]++;
+        const ch = kids[i].code;
+        if (!graph.nodes.has(ch)) continue;
+        if (ch === code){ members.add(code); continue; }   // self-consuming part
+        if (!index.has(ch)){
+          index.set(ch, next); low.set(ch, next); next++;
+          stack.push(ch); onStack.add(ch);
+          work.push([ch, 0]);
+        } else if (onStack.has(ch)){
+          low.set(code, Math.min(low.get(code), index.get(ch)));
+        }
+      } else {
+        work.pop();
+        if (work.length){
+          const parent = work[work.length - 1][0];
+          low.set(parent, Math.min(low.get(parent), low.get(code)));
+        }
+        if (low.get(code) === index.get(code)){
+          const comp = [];
+          let w;
+          do { w = stack.pop(); onStack.delete(w); comp.push(w); } while (w !== code);
+          if (comp.length > 1) for (const c of comp) members.add(c);
+        }
+      }
+    }
+  };
+  for (const code of graph.nodes.keys()) if (!index.has(code)) strongconnect(code);
+  return members;
+}
+
 // Roll costs up from leaves. Cycle members get null so a cycle can never fabricate a cost.
+// Accepts either the Set from cyclicNodes() or the raw cycle-path list.
+function cycleSetOf(c){ return c instanceof Set ? c : new Set([].concat(...(c || []))); }
+
 function rollUpCosts(graph, cycles){
-  const inCycle = new Set();
-  for (const c of cycles) for (const code of c) inCycle.add(code);
+  const inCycle = cycleSetOf(cycles);
   const rolled = new Map(), visiting = new Set();
   const cost = code => {
     if (rolled.has(code)) return rolled.get(code);
@@ -350,7 +450,7 @@ function rollUpCosts(graph, cycles){
     for (const ch of n.children){
       const cc = cost(ch.code);
       const q = ch.qty;
-      if (cc == null || q == null){ complete = false; continue; }
+      if (cc == null || q == null || ch.scrapBad){ complete = false; continue; }
       const scrapMult = ch.scrap != null && ch.scrap > 0 && ch.scrap < 100 ? 1 + ch.scrap / 100 : 1;
       sum += cc * q * scrapMult;
     }
@@ -364,8 +464,7 @@ function rollUpCosts(graph, cycles){
 }
 
 function maxDepth(graph, cycles){
-  const inCycle = new Set();
-  for (const c of cycles) for (const code of c) inCycle.add(code);
+  const inCycle = cycleSetOf(cycles);
   const memo = new Map();
   const d = (code, guard) => {
     if (memo.has(code)) return memo.get(code);
@@ -379,23 +478,35 @@ function maxDepth(graph, cycles){
     memo.set(code, m);
     return m;
   };
+  // Walk from every node, not just the roots: a graph whose top level is caught in a
+  // cycle has no roots at all, and reporting depth 0 for a five-level BOM is a lie.
   let best = 0;
-  for (const r of graph.roots) best = Math.max(best, d(r.code, new Set()));
+  for (const code of graph.nodes.keys()) best = Math.max(best, d(code, new Set()));
   return best;
 }
 
 function whereUsed(graph, code, cycles){
-  const inCycle = new Set();
-  for (const c of cycles) for (const x of c) inCycle.add(x);
-  const out = [], seen = new Set();
+  const inCycle = cycleSetOf(cycles);
+  const out = [], seen = new Map();
   const walk = (c, path) => {
     const n = graph.nodes.get(c);
     if (!n) return;
     for (const p of n.parents){
+      if (path.includes(p.code) || inCycle.has(p.code)) continue;
       const key = p.code + '<' + path.join('<');
-      if (seen.has(key) || path.includes(p.code) || inCycle.has(p.code)) continue;
-      seen.add(key);
-      out.push({parent:p.code, qty:p.qty, path:[...path, p.code]});
+      // A parent listing the same component on two lines consumes both quantities.
+      // Collapsing them to one entry under-reports usage on exactly the assemblies
+      // the duplicate-line detector is already warning about.
+      if (seen.has(key)){
+        const prev = seen.get(key);
+        prev.lines++;
+        if (prev.qty != null && p.qty != null) prev.qty += p.qty;
+        else prev.qty = null;
+        continue;
+      }
+      const rec = {parent:p.code, qty:p.qty, lines:1, path:[...path, p.code]};
+      seen.set(key, rec);
+      out.push(rec);
       walk(p.code, [...path, p.code]);
     }
   };
@@ -405,9 +516,22 @@ function whereUsed(graph, code, cycles){
 
 /* ---------- the quality engine ---------- */
 
-function analyseBOM(lines, graph, cycles, rolled){
+function analyseBOM(lines, graph, cycles, rolled, orphans){
   const F = [];
   const push = (sev, title, desc, refs) => F.push({sev, title, desc, refs: refs || []});
+
+  // 0. Rows that cannot join the graph at all. Reported first because everything below
+  //    this line is computed over a dataset these rows are missing from.
+  const orph = orphans || [];
+  if (orph.length){
+    const refs = orph.slice(0, 40).map(l => 'row ' + (l.i + 2) + ': ' +
+      (l.parent ? 'component blank, assembly "' + l.parent + '"' : 'assembly blank, component "' + l.child + '"'));
+    if (orph.length > 40) refs.push('…and ' + (orph.length - 40) + ' more');
+    push('high', 'Rows with no assembly or no component',
+      orph.length + ' row' + (orph.length === 1 ? ' names' : 's name') + ' only one side of the relationship, so ' +
+      (orph.length === 1 ? 'it is' : 'they are') + ' excluded from every count, cost and structure below. ' +
+      'Usually a shifted column or a subtotal line left in the export — check the source before trusting any figure on this page.', refs);
+  }
 
   // 1. Circular references — a BOM that contains itself never costs and never explodes
   if (cycles.length)
@@ -416,10 +540,12 @@ function analyseBOM(lines, graph, cycles, rolled){
       cycles.map(c => c.join(' → ')));
 
   // 2. The same component described inconsistently across lines
-  const uomClash = [], costClash = [];
+  const uomClash = [], costClash = [], statusClash = [], statedClash = [];
   for (const [code, n] of graph.nodes){
     if (n.uoms.size > 1) uomClash.push(code + ': ' + [...n.uoms].join(' vs '));
-    if (n.costs.size > 1) costClash.push(code + ': ' + [...n.costs].map(fmtMoney).join(' vs '));
+    if (n.costs.size > 1) costClash.push(code + ': ' + fmtMoneySet(n.costs));
+    if (n.statuses.size > 1) statusClash.push(code + ': ' + [...n.statuses].join(' vs '));
+    if (n.statedCosts.size > 1) statedClash.push(code + ': ' + fmtMoneySet(n.statedCosts));
   }
   if (uomClash.length)
     push('high', 'Same component measured in different units',
@@ -427,6 +553,12 @@ function analyseBOM(lines, graph, cycles, rolled){
   if (costClash.length)
     push('med', 'Same component costed differently on different lines',
       'One part carries more than one unit cost. The roll-up uses the first value seen, so some assembly is being costed with a figure the export itself disagrees with.', costClash);
+  if (statusClash.length)
+    push('med', 'Same component flagged with contradictory statuses',
+      'One part is marked live on some lines and obsolete on others. Which reading wins depends on row order, so the obsolescence check below may be reporting the wrong answer for these.', statusClash);
+  if (statedClash.length)
+    push('high', 'Assembly carries more than one stated cost',
+      'The same assembly is given different standard costs on different lines. Only the first is compared against the roll-up, so at least one of these is wrong and unchecked.', statedClash);
 
   // 3. Quantity problems
   const badQty = [], zeroQty = [], negQty = [];
@@ -444,14 +576,26 @@ function analyseBOM(lines, graph, cycles, rolled){
   if (zeroQty.length) push('med', 'Zero quantities',
     'Lines that consume nothing. Usually leftovers from a superseded design — they clutter the BOM and confuse pickers.', zeroQty);
 
+  // 3b. Scrap percentages that cannot be applied. The roll-up refuses to cost through
+  //     these rather than quietly pretending the scrap allowance was zero.
+  const badScrap = [];
+  for (const [code, n] of graph.nodes)
+    for (const ch of n.children)
+      if (ch.scrapBad) badScrap.push(code + ' → ' + ch.code + ' ("' + ch.scrapRaw + '")');
+  if (badScrap.length) push('high', 'Unusable scrap percentages',
+    'A scrap figure that will not read as a percentage between 0 and 100 leaves the true consumption unknown. These lines are excluded from the cost roll-up rather than costed as if scrap were zero, so the assemblies above them show no cost at all.', badScrap);
+
   // 4. Costing gaps
-  const noCost = [], zeroCost = [];
+  const noCost = [], zeroCost = [], negCost = [];
   for (const n of graph.leaves){
     if (n.cost == null) noCost.push(n.code);
+    else if (n.cost < 0) negCost.push(n.code + ' (' + fmtMoney(n.cost) + ')');
     else if (n.cost === 0) zeroCost.push(n.code);
   }
   if (noCost.length) push('high', 'Purchased parts with no cost',
     'Bottom-level components carrying no unit cost. Every assembly above them rolls up incomplete, so the finished-goods cost is understated.', noCost);
+  if (negCost.length) push('high', 'Purchased parts with a negative cost',
+    'A component cannot cost less than nothing. These drag the rolled-up cost of every assembly above them downwards, so the finished-goods cost is understated by a figure nobody has noticed.', negCost);
   if (zeroCost.length) push('med', 'Purchased parts costed at zero',
     'A genuine zero cost is rare — usually it means the cost was never entered. Anything built from these is undercosted.', zeroCost);
 
@@ -464,6 +608,7 @@ function analyseBOM(lines, graph, cycles, rolled){
     const diff = Math.round((n.statedCost - r) * 100) / 100;
     if (Math.abs(diff) > 0.01 && Math.abs(diff) / Math.max(1, Math.abs(r)) > 0.005)
       drift.push(code + ': stated ' + fmtMoney(n.statedCost) + ' vs rolled-up ' + fmtMoney(r) + ' (' + (diff > 0 ? '+' : '') + fmtMoney(diff) + ')');
+
   }
   if (drift.length) push('high', 'Standard cost disagrees with the rolled-up cost',
     'The cost held against the assembly does not match the sum of its components. Either the standard cost is stale or the BOM changed without a re-roll — margins calculated from these are wrong.', drift);
@@ -471,7 +616,7 @@ function analyseBOM(lines, graph, cycles, rolled){
   // 6. Obsolete parts on live BOMs
   const obsolete = [];
   for (const [code, n] of graph.nodes){
-    if (!OBSOLETE_RE.test(n.status || '')) continue;
+    if (!isObsoleteStatus(n.status, n.statusAlias)) continue;
     if (n.parents.length) obsolete.push(code + ' (' + n.status + ') used by ' + [...new Set(n.parents.map(p => p.code))].join(', '));
   }
   if (obsolete.length) push('high', 'Obsolete components still on live BOMs',
@@ -490,7 +635,7 @@ function analyseBOM(lines, graph, cycles, rolled){
     'Two lines for the same part on the same parent. Usually a duplicate import — it doubles the quantity picked and the cost rolled up.', [...new Set(dupes)]);
 
   // 8. Missing units of measure
-  const noUom = graph.leaves.filter(n => !n.uom).map(n => n.code);
+  const noUom = [...graph.nodes.values()].filter(n => !n.uom).map(n => n.code);
   if (noUom.length) push('med', 'Components with no unit of measure',
     'ERPNext requires a UoM on every item. Without one the import fails or silently defaults, which is how "4 metres" becomes "4 each".', noUom);
 
@@ -515,6 +660,7 @@ function analyseBOM(lines, graph, cycles, rolled){
 }
 
 function computeBomStats(graph, cycles, rolled){
+  const cycSet = cycleSetOf(cycles);
   const assemblies = [...graph.nodes.values()].filter(n => n.children.length > 0);
   const costed = assemblies.filter(n => rolled.get(n.code) != null);
   const topLevel = graph.roots;
@@ -526,14 +672,26 @@ function computeBomStats(graph, cycles, rolled){
     topLevel: topLevel.length,
     lines: totalLines,
     depth: maxDepth(graph, cycles),
-    cycles: cycles.length,
+    cycles: cycSet.size,
     costedPct: assemblies.length ? Math.round(costed.length / assemblies.length * 100) : 0
   };
 }
 
+// Signed on purpose. A negative cost is a defect, and hiding the minus sign turns
+// "this part is priced at minus £480" into a plausible-looking £480.
 function fmtMoney(n){
   if (n == null) return '—';
-  return '£' + Math.abs(n).toLocaleString('en-GB',{minimumFractionDigits:2, maximumFractionDigits:2});
+  const s = Math.abs(n).toLocaleString('en-GB',{minimumFractionDigits:2, maximumFractionDigits:2});
+  return (n < 0 ? '-£' : '£') + s;
+}
+
+// Renders a set of numbers for a "these disagree" message. Falls back to full
+// precision when 2dp formatting would make genuinely different values look identical.
+function fmtMoneySet(values){
+  const vs = [...values];
+  const shown = vs.map(fmtMoney);
+  if (new Set(shown).size === vs.length) return shown.join(' vs ');
+  return vs.map(v => (v < 0 ? '-£' : '£') + Math.abs(v)).join(' vs ');
 }
 
 /* ---------- ERPNext export ---------- */
@@ -548,11 +706,18 @@ function toERPNextBOM(graph, rolled){
       'Rolled-up Cost': r == null ? '' : r.toFixed(4)});
     for (const ch of n.children){
       const c = graph.nodes.get(ch.code);
+      // Scrap is part of the arithmetic this app displays. Omitting it from the export
+      // means ERPNext recomputes a different cost from the same components — the import
+      // has to be able to reproduce the figure the user signed off.
+      const scrapOut = ch.scrapBad ? '' : (ch.scrap != null && ch.scrap > 0 && ch.scrap < 100 ? ch.scrap : 0);
       items.push({'Parent BOM': 'BOM-' + code, 'Item Code': ch.code,
         'Item Name': c ? (c.desc || ch.code) : ch.code,
         'Qty': ch.qty == null ? '' : ch.qty,
         'UOM': c ? (c.uom || 'Nos') : 'Nos',
-        'Rate': c && c.cost != null ? c.cost.toFixed(4) : ''});
+        'Rate': c && c.cost != null ? c.cost.toFixed(4) : '',
+        'Scrap %': scrapOut,
+        'Qty Consumed Per Unit': (ch.qty == null || ch.scrapBad) ? ''
+          : (ch.qty * (ch.scrap != null && ch.scrap > 0 && ch.scrap < 100 ? 1 + ch.scrap/100 : 1)).toFixed(6)});
     }
   }
   return {boms, items};
@@ -603,12 +768,18 @@ SA-PANEL-SET,SA-SKIN,Skin laminate,2,Each,,Active,,
 SA-SKIN,RM-PANEL,Composite panel,3,Each,7.25,Active,,
 SA-SKIN,RM-RESIN,Bonding resin,0.2,Litre,31.00,Active,,
 SA-SKIN,RM-FIXING,Panel fixing,12,,0.85,Active,,
+FG-BIKE-01,RM-REBATE,Supplier rebate credit,1,Each,-4.80,Active,,415.00
+FG-TRAILER-01,RM-STRAP,Load strap,2,Each,6.40,Active,heavy,
+SA-BOX,RM-HINGE,Box hinge,4,Each,"2,20",Active,,
+,RM-ORPHAN,Component with no assembly,1,Each,5.00,Active,,
+FG-ORPHAN-01,,Assembly with no component,1,Each,,Active,,
+SA-PANEL-SET,RM-PANEL,Composite panel,1,each,7.25,Obsolete,,
 `;
 
 /* ================= DOM LAYER ================= */
 if (typeof document === 'undefined') return;
 
-let LINES = [], GRAPH = null, CYCLES = [], ROLLED = null, FINDINGS = [], BSTATS = null, EXPANDED = new Set();
+let LINES = [], ORPHANS = [], GRAPH = null, CYCLES = [], CYCSET = new Set(), ROLLED = null, FINDINGS = [], BSTATS = null, EXPANDED = new Set();
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -628,11 +799,15 @@ function load(text){
   if (r.error){ errEl.style.display = 'block'; errEl.textContent = r.error; return false; }
   errEl.style.display = 'none';
   LINES = r.lines;
+  ORPHANS = r.orphans || [];
   GRAPH = buildGraph(LINES);
   CYCLES = findCycles(GRAPH);
-  ROLLED = rollUpCosts(GRAPH, CYCLES);
-  FINDINGS = analyseBOM(LINES, GRAPH, CYCLES, ROLLED);
-  BSTATS = computeBomStats(GRAPH, CYCLES, ROLLED);
+  // Cycle *paths* read well in a finding; cycle *membership* is what costing excludes,
+  // and the two are not the same set. Everything numeric uses the membership set.
+  CYCSET = cyclicNodes(GRAPH);
+  ROLLED = rollUpCosts(GRAPH, CYCSET);
+  FINDINGS = analyseBOM(LINES, GRAPH, CYCLES, ROLLED, ORPHANS);
+  BSTATS = computeBomStats(GRAPH, CYCSET, ROLLED);
   EXPANDED = new Set(GRAPH.roots.map(r2 => r2.code));
   renderAll();
   switchView('overview');
@@ -663,7 +838,7 @@ function renderOverview(){
     kpi('Purchased parts', String(s.purchased), 'bought-in, not built', '') +
     kpi('Structure depth', String(s.depth), 'deepest level of nesting', '') +
     kpi('Fully costed', s.costedPct + '%', 'assemblies with a complete roll-up', s.costedPct === 100 ? 'good' : s.costedPct < 60 ? 'bad' : '') +
-    (s.cycles ? kpi('Circular loops', String(s.cycles), 'must be broken before import', 'bad') : '') +
+    (s.cycles ? kpi('Parts in a loop', String(s.cycles), 'circular — must be broken before import', 'bad') : '') +
     '</div>';
 
   h += '<div class="grid2">';
@@ -703,10 +878,13 @@ function renderOverview(){
     const contrib = directContributions(top);
     const max = contrib.length ? contrib[0][1] : 1;
     h += '<p class="ph" style="color:var(--text)"><b>' + esc(top) + '</b> — ' + esc(fmtMoney(costedRoots[0][1])) + '</p>';
+    // A negative contribution gets the warning colour rather than a stub of the normal
+    // bar — otherwise it reads as a small positive cost at a glance.
     h += contrib.map(([code, v]) =>
       '<div class="rank"><span class="nm">' + esc(code) + '</span>' +
-      '<span class="track"><span class="fill" style="width:' + Math.max(2, Math.round(v/max*100)) + '%"></span></span>' +
-      '<span class="amt">' + esc(fmtMoney(v)) + '</span></div>').join('');
+      '<span class="track"><span class="fill' + (v < 0 ? ' neg' : '') + '" style="width:' +
+      Math.max(2, Math.round(Math.abs(v)/max*100)) + '%"></span></span>' +
+      '<span class="amt' + (v < 0 ? ' neg' : '') + '">' + esc(fmtMoney(v)) + '</span></div>').join('');
   } else h += '<p class="ph">No fully-costed product to break down.</p>';
   h += '</div></div>';
 
@@ -723,7 +901,7 @@ function directContributions(code){
   const out = [];
   for (const ch of n.children){
     const c = ROLLED.get(ch.code);
-    if (c == null || ch.qty == null) continue;
+    if (c == null || ch.qty == null || ch.scrapBad) continue;
     const mult = ch.scrap != null && ch.scrap > 0 && ch.scrap < 100 ? 1 + ch.scrap/100 : 1;
     out.push([ch.code, Math.round(c * ch.qty * mult * 100) / 100]);
   }
@@ -754,8 +932,7 @@ function renderIssues(){
 function renderTree(){
   const host = $('treeWrap');
   if (!GRAPH){ host.innerHTML = ''; return; }
-  const inCycle = new Set();
-  for (const c of CYCLES) for (const x of c) inCycle.add(x);
+  const inCycle = CYCSET;
   let h = '';
   for (const r of GRAPH.roots) h += nodeHTML(r.code, 1, null, [], 0);
   if (!GRAPH.roots.length) h = '<p class="ph">No top-level assembly found — every assembly is consumed by another, which usually means a circular reference. See the Issues tab.</p>';
@@ -800,7 +977,7 @@ function renderWhereUsed(term){
   if (!matches.length){ host.innerHTML = '<p class="ph">No component matches “' + esc(term) + '”.</p>'; return; }
   let h = '';
   for (const code of matches.slice(0, 5)){
-    const uses = whereUsed(GRAPH, code, CYCLES);
+    const uses = whereUsed(GRAPH, code, CYCSET);
     const n = GRAPH.nodes.get(code);
     h += '<h4 style="font-size:13px;margin:14px 0 6px">' + esc(code) + (n.desc ? ' <span style="font-weight:400;color:var(--text-dim)">' + esc(n.desc) + '</span>' : '') + '</h4>';
     if (!uses.length){ h += '<p class="ph">Not used by anything — this is a top-level item.</p>'; continue; }
@@ -848,7 +1025,7 @@ function loadDemo(){ $('paste').value = DEMO_BOM; load(DEMO_BOM); toast('Demo BO
 $('btnDemo').addEventListener('click', loadDemo);
 $('btnDemo2').addEventListener('click', loadDemo);
 $('btnClear').addEventListener('click', () => {
-  LINES = []; GRAPH = null; CYCLES = []; ROLLED = null; FINDINGS = []; BSTATS = null;
+  LINES = []; ORPHANS = []; GRAPH = null; CYCLES = []; CYCSET = new Set(); ROLLED = null; FINDINGS = []; BSTATS = null;
   renderAll(); $('strip').innerHTML = ''; toast('Cleared');
 });
 

@@ -1,20 +1,27 @@
-# JSON X-Ray — Payload Workbench
+# Atrium — Accounts &amp; Migration Workbench
 
 Project brief for Claude Code. Read this fully before making changes.
 
 ## What this is
 
-A single-file, zero-dependency, fully client-side JSON inspection webapp aimed at data/decisioning professionals (credit risk, bureau payloads, API traces). It goes beyond "beautify JSON" tools: it actively scans payloads for data-quality defects and PII.
+**Atrium** is a suite of four single-file, zero-dependency, fully client-side workbenches
+sharing one product shell. Each loads an export, scans it for defects in plain English, and
+emits whatever files the next step needs. Nothing is uploaded; nothing is stored server-side.
 
-**Owner:** PaulMc (Bluewater Associates). Primary real-world use case: inspecting credit decisioning connector payloads (TransUnion, Equifax, CIFAS, affordability engines) during QA/testing at a UK financial services client. Payloads are sensitive — the no-server, no-network architecture is a deliberate design constraint, not an accident. **Never add any code that transmits payload data anywhere.**
+The original member — JSON X-Ray (`json.html`) — is a JSON inspection app for
+data/decisioning professionals (credit risk, bureau payloads, API traces). It goes beyond
+"beautify JSON" tools: it actively scans payloads for data-quality defects and PII.
+
+**Owner:** PaulMc (Bluewater Associates). Primary real-world use case: inspecting credit decisioning connector payloads (TransUnion, Equifax, CIFAS, affordability engines) during QA/testing at a UK financial services client, and migrating a client off Sage 50 onto self-hosted ERPNext. Payloads and ledgers are sensitive — the no-server, no-network architecture is a deliberate design constraint, not an accident. **Never add any code that transmits payload data anywhere.**
 
 ## Repo layout
 
 ```
-index.html                    ← the entire app (HTML + CSS + JS in one file)
-sage.html                     ← sister app: Sage X-Ray — Ledger Workbench (same one-file rules)
-migrate.html                  ← sister app: Migration X-Ray — Sage 50 → ERPNext (same one-file rules)
-bom.html                      ← sister app: BOM X-Ray — Bill of Materials Workbench (same one-file rules)
+index.html                    ← Atrium home dashboard (module cards + migration workflow)
+json.html                     ← JSON X-Ray — Payload Workbench (was index.html)
+sage.html                     ← Sage X-Ray — Ledger Workbench (same one-file rules)
+migrate.html                  ← Migration X-Ray — Sage 50 → ERPNext (same one-file rules)
+bom.html                      ← BOM X-Ray — Bill of Materials Workbench (same one-file rules)
 CLAUDE.md                     ← this file
 README.md                     ← user-facing docs + Pages setup
 .claude/skills/               ← project skills: xray-conventions, sage-migration
@@ -22,13 +29,22 @@ README.md                     ← user-facing docs + Pages setup
 .github/workflows/pages.yml   ← GitHub Pages deploy (publishes repo root on push to main)
 ```
 
+## The product shell
+
+Every module carries an identical `.appbar` immediately after `<body>`: brand link to
+`index.html`, nav across all five pages with `class="on"` on the current one, and a
+`100% CLIENT-SIDE` marker. The markup and its CSS block are **duplicated verbatim** in each
+file — that is the cost of the single-file constraint, and it is deliberate. If you change
+the nav, change it in all five files and re-check that each page marks the right link `on`.
+`index.html` is a static page with no script block; it must stay that way.
+
 Read the `xray-conventions` skill before modifying any app; read `sage-migration` before
 touching migrate.html or anything Sage/ERPNext. After pure-layer changes, run the
 `migration-auditor` agent.
 
 There is no build step, no package.json, no framework. Keep it that way unless a feature genuinely cannot be done in vanilla JS (unlikely). The single-file constraint is a feature: it must remain trivially deployable to GitHub Pages / Vercel / an intranet share by copying one file.
 
-## Architecture (inside index.html)
+## Architecture (inside json.html)
 
 One IIFE, strict mode. Key state:
 
@@ -142,7 +158,7 @@ No test framework. Manual smoke test = load the built-in demo payload (`btnDemo`
 
 ## Sister app: Sage X-Ray — Ledger Workbench (`sage.html`)
 
-Same architecture rules as `index.html`: one file, one IIFE, strict mode, vanilla JS, design tokens shared with JSON X-Ray, `esc()` on everything rendered, UK English. Built for the client's Sage estate.
+Same architecture rules as `json.html`: one file, one IIFE, strict mode, vanilla JS, design tokens shared with JSON X-Ray, `esc()` on everything rendered, UK English. Built for the client's Sage estate.
 
 **Script structure** (matters for testing): the IIFE is split by a
 `/* ================= DOM LAYER ================= */` marker. Everything above it is pure
@@ -245,34 +261,75 @@ KPIs, attention list, rolled-up cost per product, most-used components, cost mak
 **Structure** (explodable tree), **Issues**, **Where used**, **Load**.
 
 Key pure functions: `parseBOM` (fuzzy headers via `BOM_ALIASES`; one row per parent →
-component line), `buildGraph` (nodes with `children`/`parents`, plus `uoms`/`costs` Sets so
-contradictions across lines are catchable), `findCycles` (DFS three-colour; returns every
-distinct cycle), `rollUpCosts` (leaves upward, qty × cost × scrap; **cycle members and any
-assembly with an incomplete branch resolve to `null`, never a fabricated number**),
-`maxDepth`, `whereUsed` (multi-level upward walk, cycle-safe), `analyseBOM`, `toERPNextBOM`.
+component line; returns `orphans` — rows naming only one side, which cannot join the graph),
+`buildGraph` (nodes with `children`/`parents`, plus `uoms`/`costs`/`statuses`/`statedCosts`
+Sets so contradictions across lines are catchable, and a per-line `scrapBad` flag),
+`findCycles` (DFS three-colour — readable cycle *paths*, for display only), `cyclicNodes`
+(iterative Tarjan — complete SCC *membership*, which is what costing excludes),
+`rollUpCosts` (leaves upward, qty × cost × scrap; **cycle members and any assembly with an
+incomplete branch resolve to `null`, never a fabricated number**), `maxDepth`, `whereUsed`
+(multi-level upward walk, cycle-safe, sums duplicate lines), `analyseBOM`, `toERPNextBOM`.
 
-**Costing rule that must not be relaxed:** a roll-up is either complete or `null`. Never
-substitute zero for a missing component cost — an understated product cost that looks
-authoritative is worse than an obvious gap. The UI shows "no roll-up" and names the reason.
+**Cycle paths and cycle membership are different sets.** A node can sit inside a
+strongly-connected component without lying on the path any one back-edge closed, so
+`findCycles` under-reports membership by design. Anything numeric — costing, depth, stats,
+where-used — must take the `cyclicNodes` Set, never the `findCycles` list.
 
-**Detector families (15)** — the demo BOM must fire every one: circular references ·
-conflicting units for one part · conflicting costs for one part · unreadable/missing
-quantities · negative quantities · zero quantities · purchased parts with no cost ·
-parts costed at zero · stated cost vs rolled-up cost drift · obsolete parts on live BOMs ·
-duplicate component lines on one parent · missing units of measure · missing descriptions ·
-deep nesting (≥4 levels) · single-component assemblies.
+**Costing rules that must not be relaxed:**
+
+- A roll-up is either complete or `null`. Never substitute zero for a missing component
+  cost — an understated product cost that looks authoritative is worse than an obvious gap.
+  The UI shows "no roll-up" and names the reason.
+- The same applies to a scrap percentage that will not parse or falls outside 0–100: the
+  true consumption is unknown, so the branch resolves to `null` rather than being costed as
+  if scrap were zero.
+- `fmtMoney` is **signed**. A negative cost is a defect; rendering `-£480` as `£480` turns
+  it into a plausible figure nobody questions. `fmtMoneySet` exists because two genuinely
+  different values can format to the same 2dp string, which makes a "these disagree"
+  message read as nonsense — it falls back to full precision when that happens.
+- `parseNum` refuses commas that are not thousands separators. `"9,50"` is a European
+  decimal comma or a typo; stripping it blindly turns 9.50 into 950.
+- The ERPNext export carries `Scrap %` and `Qty Consumed Per Unit` so the import can
+  reproduce the cost this app displayed. An export that cannot reproduce the number the
+  user signed off is not a valid export.
+
+**Detector families (20)** — the demo BOM must fire every one: rows with no assembly or no
+component · circular references · conflicting units for one part · conflicting costs for one
+part · contradictory statuses for one part · more than one stated cost for an assembly ·
+unreadable/missing quantities · negative quantities · zero quantities · unusable scrap
+percentages · purchased parts with no cost · **negative** purchased-part costs · parts costed
+at zero · stated cost vs rolled-up cost drift · obsolete parts on live BOMs · duplicate
+component lines on one parent · missing units of measure (on assemblies too, not just
+leaves) · missing descriptions · deep nesting (≥4 levels) · single-component assemblies.
+
+A status column named `Active` or `Disabled` holds a boolean, not a lifecycle word — under
+`Active`, the value `N` means obsolete. `isObsoleteStatus(status, alias)` reads the matched
+header alias to decide which convention applies; never test `OBSOLETE_RE` directly.
 
 **Smoke test (bom.html)** after any change:
 
-1. Demo loads and lands on Overview; strip shows 7 blocking / 5 warnings / 3 info; all 15
+0. `node tests/bom.test.mjs` passes (81 assertions over the pure layer, one per fixed
+   defect — this is the regression suite, keep it green and extend it with each detector).
+1. Demo loads and lands on Overview; strip shows 11 blocking / 6 warnings / 3 info; all 20
    families appear on Issues.
-2. Overview: two products show a rolled-up cost, FG-BIKE-02 is named as incomplete with the
-   reason; cost make-up bars render.
+2. Overview: FG-BIKE-01 shows a rolled-up cost, FG-BIKE-02 and FG-TRAILER-01 are named as
+   incomplete with the reason; cost make-up bars render and the negative contribution
+   (RM-REBATE, -£4.80) shows in the warning colour, not as a small positive.
 3. Structure: tree expands/collapses; the circular branch is outlined and stops with
    "circular — stopped"; obsolete and no-qty badges show.
 4. Clicking any code jumps to Where used; RM-BEARING resolves 3 parent paths.
 5. All three exports download and re-parse; `bom_import.csv` has one row per assembly.
 6. `node --check` passes; pure layer runs headless when sliced at the DOM-layer marker.
+
+## Testing beyond the smoke tests
+
+`tests/bom.test.mjs` is the only committed suite. It slices `bom.html` at the DOM-layer
+marker, evaluates the pure half in a `vm` context with no `document`, and asserts against
+the exact inputs that broke each fixed defect. Run it with `node tests/bom.test.mjs`.
+
+Do the same for the other apps rather than writing throwaway harnesses in a scratch
+directory — an earlier `migrate.html` suite was written that way and is simply gone, which
+is why its regressions cannot be re-checked.
 
 ## Deployment
 
