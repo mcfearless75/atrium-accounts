@@ -69,6 +69,71 @@ header{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var
 .chip.info b{color:var(--info)}
 .actions{display:flex;gap:8px;flex-wrap:wrap}
 
+/* view switcher */
+#views{display:flex;align-items:center;gap:4px;padding:0 16px;background:var(--bg-raise);border-bottom:1px solid var(--border);flex-wrap:wrap}
+#views button{border:none;border-radius:0;background:none;padding:10px 16px;color:var(--text-dim);border-bottom:2px solid transparent;font-weight:600;font-size:13.5px}
+#views button:hover{color:var(--text)}
+#views button.active{color:var(--accent);border-bottom-color:var(--accent)}
+.viewHint{font-size:11.5px;color:var(--text-faint);margin-left:10px}
+@media (max-width:700px){.viewHint{display:none}}
+
+/* dashboard */
+#dashboard{flex:1;overflow:auto;display:none}
+#dashboard.on{display:block}
+main#workbench{display:none}
+main#workbench.on{display:flex}
+.dashInner{max-width:1180px;margin:0 auto;padding:20px 18px 60px}
+.dashEmpty{color:var(--text-dim);font-size:14px;text-align:center;padding:60px 20px;line-height:1.7}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--bg-raise);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.kpi .lab{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-faint);font-weight:600}
+.kpi .val{font-family:var(--mono);font-size:24px;font-weight:600;margin-top:6px;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+.kpi .sub{font-size:11.5px;color:var(--text-dim);margin-top:3px}
+.kpi.pos .val{color:var(--info)}
+.kpi.neg .val{color:var(--high)}
+
+.dashGrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.dashGrid.wide{grid-template-columns:1fr}
+@media (max-width:900px){.dashGrid{grid-template-columns:1fr}}
+.panel{background:var(--bg-raise);border:1px solid var(--border);border-radius:10px;padding:14px 16px;min-width:0}
+.panel h3{font-size:13.5px;margin-bottom:2px}
+.panel .ph{font-size:11.5px;color:var(--text-dim);margin-bottom:12px;line-height:1.5}
+.legendRow{display:flex;gap:16px;font-size:11.5px;color:var(--text-dim);margin-bottom:8px;flex-wrap:wrap}
+.legendRow .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.chartWrap{overflow-x:auto}
+svg .gridline{stroke:var(--border);stroke-width:1}
+svg text{font-family:var(--sans)}
+svg .bar:hover{opacity:.8}
+
+/* attention list */
+.att{display:flex;gap:11px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #1b212b}
+.att:last-child{border-bottom:none}
+.att .dot{width:9px;height:9px;border-radius:50%;flex:none;margin-top:5px}
+.att .dot.high{background:var(--high)}
+.att .dot.med{background:var(--med)}
+.att .dot.info{background:var(--info)}
+.att .t{font-size:13px;font-weight:600}
+.att .d{font-size:12px;color:var(--text-dim);line-height:1.5;margin-top:2px}
+.att .n{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--text-faint);white-space:nowrap;padding-left:8px}
+.allClear{color:var(--info);font-size:13px;padding:10px 0}
+
+/* rank rows */
+.rank{display:grid;grid-template-columns:minmax(90px,1fr) 2fr auto;gap:10px;align-items:center;font-size:12.5px;padding:5px 0}
+.rank .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.rank .nm.masked{color:var(--pii);letter-spacing:2px}
+.rank .track{display:block;background:var(--bg);border-radius:4px;height:9px;overflow:hidden}
+.rank .fill{display:block;height:100%;border-radius:4px;background:var(--chart-observed)}
+.rank .fill.exp{background:var(--chart-expected)}
+.rank .amt{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text-dim);white-space:nowrap}
+
+/* report tables */
+table.rep{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px}
+table.rep td{padding:5px 4px;border-bottom:1px solid #1b212b}
+table.rep td.a{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+table.rep tr.tot td{border-top:1px solid var(--border);border-bottom:none;font-weight:700;padding-top:8px}
+table.rep tr.tot td.a{color:var(--text)}
+.repNote{font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.5}
+
 /* layout */
 main{flex:1;display:flex;min-height:0}
 #left{flex:1.25;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--border)}
@@ -181,7 +246,15 @@ details summary{cursor:pointer;font-size:12px;color:var(--text-dim);margin-top:8
   </div>
 </header>
 
-<main>
+<nav id="views" aria-label="View">
+  <button data-view="dashboard" class="active">Dashboard</button>
+  <button data-view="workbench">Workbench</button>
+  <span class="viewHint">Dashboard is the overview. Workbench is the transaction-level detail.</span>
+</nav>
+
+<section id="dashboard" aria-label="Dashboard"><div class="dashInner" id="dashInner"></div></section>
+
+<main id="workbench">
   <section id="left" aria-label="Transactions">
     <div class="paneHead">
       <input id="search" type="text" placeholder="Filter transactions… (account, ref, narrative, amount)" autocomplete="off">
@@ -593,6 +666,121 @@ function routeModel(choice, question, findings, txCount){
           why:'auto — ' + reasons.join(', ') + ' (complexity ' + Math.round(score) + '/20+)'};
 }
 
+/* ---------- dashboard aggregation ----------
+   Classification is nominal-code first (Sage 50 UK default ranges), falling back to
+   transaction type when the export carries no nominal. Everything here is derived —
+   nothing is estimated or filled in. */
+
+const NOMINAL_BANDS = [
+  [0,     999,  'asset',     'Fixed assets'],
+  [1000, 1999,  'asset',     'Current assets'],
+  [2000, 2299,  'liability', 'Current liabilities'],
+  [2300, 2999,  'liability', 'Long-term liabilities'],
+  [3000, 3999,  'equity',    'Capital and reserves'],
+  [4000, 4999,  'income',    'Sales'],
+  [5000, 5999,  'expense',   'Cost of sales'],
+  [6000, 6999,  'expense',   'Direct expenses'],
+  [7000, 7999,  'expense',   'Overheads'],
+  [8000, 8999,  'expense',   'Depreciation and other overheads'],
+  [9000, 99999, 'suspense',  'Suspense / mispostings']
+];
+
+function classifyNominal(code){
+  const n = parseInt(code, 10);
+  if (isNaN(n)) return null;
+  for (const [lo, hi, kind, label] of NOMINAL_BANDS)
+    if (n >= lo && n <= hi) return {kind, label};
+  return null;
+}
+
+const SALES_TYPES = {SI:1, SC:-1};
+const PURCHASE_TYPES = {PI:1, PC:-1};
+const JOURNAL_DIR = {JD:1, JC:-1};   // debit positive, credit negative
+
+// Direction-aware classification of one transaction into income / expense / other.
+// Journals need double-entry signs: income accounts carry credit balances, so a
+// debit to an income nominal REDUCES income, while a debit to an expense nominal
+// increases expenditure. Ignoring that inflates both sides of the P&L.
+function classifyTx(t){
+  const c = classifyNominal(t.nominal);
+  const amt = t.net == null ? 0 : t.net;
+  if (t.type in SALES_TYPES)     return {kind:'income',  value: amt * SALES_TYPES[t.type],    label: c ? c.label : 'Sales'};
+  if (t.type in PURCHASE_TYPES)  return {kind:'expense', value: amt * PURCHASE_TYPES[t.type], label: c ? c.label : 'Purchases'};
+  if (!c) return {kind:'other', value: amt, label:'Other'};
+  if (t.type in JOURNAL_DIR){
+    const dir = JOURNAL_DIR[t.type];
+    if (c.kind === 'income')  return {kind:'income',  value: -amt * dir, label: c.label};
+    if (c.kind === 'expense') return {kind:'expense', value:  amt * dir, label: c.label};
+    return {kind: c.kind, value: amt, label: c.label};
+  }
+  return {kind: c.kind, value: amt, label: c.label};
+}
+
+function monthKey(d){
+  return d ? d.toISOString().slice(0,7) : null;
+}
+function monthLabel(k){
+  const [y, m] = k.split('-');
+  return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m - 1] + ' ' + y.slice(2);
+}
+
+function buildDashboard(txs){
+  let income = 0, expense = 0, outputTax = 0, inputTax = 0, unclassified = 0;
+  let undatedIncome = 0, undatedExpense = 0, undated = 0;
+  const months = new Map();          // 'YYYY-MM' → {income, expense}
+  const expenseCats = new Map();     // label → total
+  const customers = new Map();       // account → income
+  const suppliers = new Map();       // account → spend
+  const plIncome = new Map(), plExpense = new Map();   // label → total
+
+  for (const t of txs){
+    const c = classifyTx(t);
+    const mk = monthKey(t.date);
+    if (mk && !months.has(mk)) months.set(mk, {income:0, expense:0});
+    if (!mk && (c.kind === 'income' || c.kind === 'expense')){
+      undated++;
+      if (c.kind === 'income') undatedIncome += c.value; else undatedExpense += c.value;
+    }
+    if (c.kind === 'income'){
+      income += c.value;
+      plIncome.set(c.label, (plIncome.get(c.label) || 0) + c.value);
+      if (mk) months.get(mk).income += c.value;
+      // Only genuine sales documents name a customer — bank receipts and journals
+      // carry a nominal or control account, not a trading relationship.
+      if (t.account && (t.type in SALES_TYPES)) customers.set(t.account, (customers.get(t.account) || 0) + c.value);
+    } else if (c.kind === 'expense'){
+      expense += c.value;
+      plExpense.set(c.label, (plExpense.get(c.label) || 0) + c.value);
+      expenseCats.set(c.label, (expenseCats.get(c.label) || 0) + c.value);
+      if (mk) months.get(mk).expense += c.value;
+      if (t.account && (t.type in PURCHASE_TYPES)) suppliers.set(t.account, (suppliers.get(t.account) || 0) + c.value);
+    } else if (c.kind === 'other' || c.kind === 'suspense'){
+      if (t.net != null && t.type !== 'JD' && t.type !== 'JC') unclassified++;
+    }
+    // VAT: tax on sales is output tax (owed to HMRC), tax on purchases is input tax (reclaimable)
+    if (t.tax != null && t.tax !== 0){
+      if (t.type in SALES_TYPES) outputTax += t.tax * SALES_TYPES[t.type];
+      else if (t.type in PURCHASE_TYPES) inputTax += t.tax * PURCHASE_TYPES[t.type];
+    }
+  }
+
+  const rank = m => [...m.entries()].filter(e => e[1] > 0).sort((a,b) => b[1] - a[1]);
+  const monthly = [...months.entries()].sort((a,b) => a[0] < b[0] ? -1 : 1)
+    .map(([k, v]) => ({key:k, label:monthLabel(k), income:v.income, expense:v.expense}));
+
+  return {
+    income, expense, net: income - expense,
+    outputTax, inputTax, vatDue: outputTax - inputTax,
+    monthly,
+    expenseCats: rank(expenseCats),
+    topCustomers: rank(customers).slice(0, 6),
+    topSuppliers: rank(suppliers).slice(0, 6),
+    pl: {income: rank(plIncome), expense: rank(plExpense)},
+    unclassified,
+    undated, undatedIncome, undatedExpense
+  };
+}
+
 function fmtGBP(n){
   return '£' + Math.abs(n).toLocaleString('en-GB',{minimumFractionDigits:2, maximumFractionDigits:2});
 }
@@ -684,10 +872,164 @@ function load(text, today){
     if (!(i in ROW_SEV) || f.sev === 'high') ROW_SEV[i] = f.sev;
   renderAll();
   $('overlay').classList.add('hidden');
+  switchView('dashboard');   // land on the overview, not the transaction grid
   return true;
 }
 
-function renderAll(){ renderStrip(); renderGrid(); renderFindings(); renderInsights(); }
+function renderAll(){ renderStrip(); renderGrid(); renderFindings(); renderInsights(); renderDashboard(); }
+
+/* ---------- dashboard ---------- */
+
+function renderDashboard(){
+  const host = $('dashInner');
+  if (!TXS.length){
+    host.innerHTML = '<div class="dashEmpty">No ledger loaded yet.<br>Use <b>Demo</b> to see the dashboard with sample data, or <b>Upload</b> a Sage export.</div>';
+    return;
+  }
+  const D = buildDashboard(TXS), s = STATS;
+  const period = s.min ? fmtDate(s.min) + ' to ' + fmtDate(s.max) : 'no dated transactions';
+  let h = '';
+
+  // KPI row
+  h += '<div class="kpis">' +
+    kpi('Income', fmtGBP(D.income), 'money in over the period', D.income > 0 ? 'pos' : '') +
+    kpi('Expenditure', fmtGBP(D.expense), 'money out over the period', '') +
+    kpi(D.net >= 0 ? 'Surplus' : 'Deficit', fmtGBP(D.net), 'income less expenditure', D.net >= 0 ? 'pos' : 'neg') +
+    kpi('VAT position', fmtGBP(D.vatDue), D.vatDue >= 0 ? 'estimated owed to HMRC' : 'estimated reclaimable', '') +
+    kpi('Transactions', String(s.count), period, '') +
+    '</div>';
+
+  // Attention panel + monthly chart
+  h += '<div class="dashGrid">';
+  h += '<div class="panel"><h3>Needs your attention</h3>' +
+    '<p class="ph">The checks that found something, most serious first. Open the Workbench to see the transactions behind each one.</p>' +
+    attentionList() + '</div>';
+
+  h += '<div class="panel"><h3>Money in and out by month</h3>' +
+    '<p class="ph">Sales and credits against purchases and overheads, by posting month.</p>';
+  if (D.monthly.length){
+    h += '<div class="legendRow">' +
+      '<span><span class="sw" style="background:var(--chart-observed)"></span>Income</span>' +
+      '<span><span class="sw" style="background:var(--chart-expected)"></span>Expenditure</span></div>' +
+      '<div class="chartWrap">' + monthlySVG(D.monthly) + '</div>';
+    if (D.undated) h += '<p class="repNote">' + D.undated + ' transaction' + (D.undated > 1 ? 's have' : ' has') +
+      ' an unreadable date and cannot be plotted (' + fmtGBP(D.undatedIncome) + ' income, ' + fmtGBP(D.undatedExpense) +
+      ' expenditure). They are still counted in the totals above — fix the dates to see them here.';
+  } else h += '<p class="ph">No dated transactions to plot.</p>';
+  h += '</div></div>';
+
+  // Where money goes + who it comes from
+  h += '<div class="dashGrid">';
+  h += '<div class="panel"><h3>Where the money goes</h3><p class="ph">Expenditure grouped by Sage nominal category.</p>' +
+    rankRows(D.expenseCats, 'exp') + '</div>';
+  h += '<div class="panel"><h3>Top customers by income</h3><p class="ph">Sales invoices less credit notes, by account.</p>' +
+    rankRows(D.topCustomers, '', true) + '</div>';
+  h += '</div>';
+
+  // Reports
+  h += '<div class="dashGrid">';
+  h += '<div class="panel"><h3>Profit &amp; loss summary</h3><p class="ph">Derived from the transactions in this export.</p>' + plTable(D) +
+    '<div class="btnRow" style="margin-top:10px"><button data-rep="pl">Download P&amp;L .csv</button></div></div>';
+  h += '<div class="panel"><h3>VAT summary</h3><p class="ph">Tax recorded against sales and purchase transactions in this period.</p>' + vatTable(D) +
+    '<div class="btnRow" style="margin-top:10px"><button data-rep="vat">Download VAT .csv</button></div>' +
+    '<p class="repNote">Indicative only — computed from this export, not a submitted return. It does not replace the VAT return produced by your accounting system.</p></div>';
+  h += '</div>';
+
+  host.innerHTML = h;
+
+  function kpi(lab, val, sub, cls){
+    return '<div class="kpi ' + cls + '"><div class="lab">' + esc(lab) + '</div><div class="val">' + esc(val) +
+      '</div><div class="sub">' + esc(sub) + '</div></div>';
+  }
+}
+
+function attentionList(){
+  if (!FINDINGS.length) return '<div class="allClear">✓ Every check passed — nothing needs attention in this ledger.</div>';
+  const order = {high:0, med:1, info:2};
+  return FINDINGS.slice().sort((a,b) => order[a.sev] - order[b.sev]).slice(0, 6).map(f =>
+    '<div class="att"><span class="dot ' + f.sev + '"></span><div><div class="t">' + esc(f.title) + '</div>' +
+    '<div class="d">' + esc(f.desc.split('.')[0]) + '.</div></div>' +
+    (f.rows.length ? '<span class="n">' + f.rows.length + ' row' + (f.rows.length > 1 ? 's' : '') + '</span>' : '') + '</div>'
+  ).join('') + (FINDINGS.length > 6 ? '<p class="repNote">+' + (FINDINGS.length - 6) + ' more in the Workbench.</p>' : '');
+}
+
+function rankRows(entries, cls, maskable){
+  if (!entries.length) return '<p class="ph">Nothing to show.</p>';
+  const max = entries[0][1] || 1;
+  return entries.slice(0, 7).map(([name, v]) => {
+    const label = (maskable && MASK) ? maskVal(name) : name;
+    return '<div class="rank"><span class="nm' + (maskable && MASK ? ' masked' : '') + '">' + esc(label) + '</span>' +
+      '<span class="track"><span class="fill ' + cls + '" style="width:' + Math.max(2, Math.round(v / max * 100)) + '%"></span></span>' +
+      '<span class="amt">' + esc(fmtGBP(v)) + '</span></div>';
+  }).join('');
+}
+
+function plTable(D){
+  let h = '<table class="rep">';
+  h += '<tr><td colspan="2" style="color:var(--text-dim);font-size:11px;letter-spacing:.06em;text-transform:uppercase">Income</td></tr>';
+  for (const [lab, v] of D.pl.income) h += '<tr><td>' + esc(lab) + '</td><td class="a">' + esc(fmtGBP(v)) + '</td></tr>';
+  if (!D.pl.income.length) h += '<tr><td colspan="2" style="color:var(--text-faint)">None</td></tr>';
+  h += '<tr><td colspan="2" style="color:var(--text-dim);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding-top:12px">Expenditure</td></tr>';
+  for (const [lab, v] of D.pl.expense) h += '<tr><td>' + esc(lab) + '</td><td class="a">(' + esc(fmtGBP(v)) + ')</td></tr>';
+  if (!D.pl.expense.length) h += '<tr><td colspan="2" style="color:var(--text-faint)">None</td></tr>';
+  h += '<tr class="tot"><td>' + (D.net >= 0 ? 'Surplus' : 'Deficit') + '</td><td class="a" style="color:' +
+    (D.net >= 0 ? 'var(--info)' : 'var(--high)') + '">' + esc(fmtSigned(D.net)) + '</td></tr></table>';
+  if (D.unclassified) h += '<p class="repNote">' + D.unclassified + ' transaction' + (D.unclassified > 1 ? 's' : '') +
+    ' could not be classified as income or expenditure (bank, journal or unrecognised nominal) and sit outside this summary.</p>';
+  return h;
+}
+
+function vatTable(D){
+  return '<table class="rep">' +
+    '<tr><td>VAT charged on sales (output tax)</td><td class="a">' + esc(fmtGBP(D.outputTax)) + '</td></tr>' +
+    '<tr><td>VAT paid on purchases (input tax)</td><td class="a">(' + esc(fmtGBP(D.inputTax)) + ')</td></tr>' +
+    '<tr class="tot"><td>' + (D.vatDue >= 0 ? 'Estimated due to HMRC' : 'Estimated reclaimable') + '</td>' +
+    '<td class="a">' + esc(fmtGBP(D.vatDue)) + '</td></tr></table>';
+}
+
+// Grouped bars: income and expenditure per month, on one shared axis.
+function monthlySVG(monthly){
+  const n = monthly.length;
+  const W = Math.max(420, 70 * n + 60), H = 230;
+  const padL = 54, padR = 10, padT = 10, padB = 30;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const max = Math.max(1, ...monthly.map(m => Math.max(m.income, m.expense)));
+  const step = niceStep(max);
+  const top = Math.ceil(max / step) * step;
+  const y = v => padT + plotH - (v / top) * plotH;
+  const band = plotW / n, barW = Math.min(22, (band - 12) / 2);
+  let s = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Income and expenditure by month" style="width:100%;min-width:' + W + 'px;height:auto;display:block">';
+  for (let g = 0; g <= top; g += step){
+    s += '<line class="gridline" x1="' + padL + '" y1="' + y(g) + '" x2="' + (W - padR) + '" y2="' + y(g) + '"/>' +
+      '<text x="' + (padL - 8) + '" y="' + (y(g) + 4) + '" text-anchor="end" font-size="10" fill="#8b949e">' + shortGBP(g) + '</text>';
+  }
+  monthly.forEach((m, i) => {
+    const cx = padL + band * (i + 0.5);
+    s += bar(cx - barW - 2, m.income, 'var(--chart-observed)', m.label + ' income ' + fmtGBP(m.income));
+    s += bar(cx + 2, m.expense, 'var(--chart-expected)', m.label + ' expenditure ' + fmtGBP(m.expense));
+    s += '<text x="' + cx + '" y="' + (H - 10) + '" text-anchor="middle" font-size="10.5" fill="#8b949e">' + esc(m.label) + '</text>';
+  });
+  s += '<line class="gridline" x1="' + padL + '" y1="' + y(0) + '" x2="' + (W - padR) + '" y2="' + y(0) + '"/></svg>';
+  return s;
+  function bar(x, v, fill, title){
+    if (v <= 0) return '';
+    const yy = y(v), hgt = Math.max(1.5, y(0) - yy), r = Math.min(4, hgt);
+    return '<path class="bar" d="M' + x + ' ' + y(0) + ' V' + (yy + r) + ' q0 ' + (-r) + ' ' + r + ' ' + (-r) +
+      ' h' + (barW - 2*r) + ' q' + r + ' 0 ' + r + ' ' + r + ' V' + y(0) + ' Z" fill="' + fill + '">' +
+      '<title>' + esc(title) + '</title></path>';
+  }
+}
+
+function niceStep(max){
+  const raw = max / 4, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const norm = raw / mag;
+  return (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
+}
+function shortGBP(n){
+  if (n >= 1000000) return '£' + (n/1000000).toFixed(n % 1000000 ? 1 : 0) + 'm';
+  if (n >= 1000) return '£' + (n/1000).toFixed(n % 1000 ? 1 : 0) + 'k';
+  return '£' + n;
+}
 
 function renderStrip(){
   const c = {high:0, med:0, info:0};
@@ -938,6 +1280,42 @@ $('tabs').addEventListener('click', e => {
   if (b) switchTab(b.dataset.tab);
 });
 
+function switchView(name){
+  document.querySelectorAll('#views button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  $('dashboard').classList.toggle('on', name === 'dashboard');
+  $('workbench').classList.toggle('on', name === 'workbench');
+}
+$('views').addEventListener('click', e => {
+  const b = e.target.closest('button[data-view]');
+  if (b) switchView(b.dataset.view);
+});
+
+// Report downloads from the dashboard
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-rep]');
+  if (!b || !TXS.length) return;
+  const D = buildDashboard(TXS);
+  const esc2 = v => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g,'""') + '"' : String(v);
+  let rows, name;
+  if (b.dataset.rep === 'pl'){
+    name = 'profit-and-loss.csv';
+    rows = [['Section','Category','Amount']];
+    for (const [lab, v] of D.pl.income) rows.push(['Income', lab, v.toFixed(2)]);
+    for (const [lab, v] of D.pl.expense) rows.push(['Expenditure', lab, (-v).toFixed(2)]);
+    rows.push(['Total', D.net >= 0 ? 'Surplus' : 'Deficit', D.net.toFixed(2)]);
+  } else {
+    name = 'vat-summary.csv';
+    rows = [['Item','Amount'],
+      ['VAT charged on sales (output tax)', D.outputTax.toFixed(2)],
+      ['VAT paid on purchases (input tax)', (-D.inputTax).toFixed(2)],
+      [D.vatDue >= 0 ? 'Estimated due to HMRC' : 'Estimated reclaimable', D.vatDue.toFixed(2)]];
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([rows.map(r => r.map(esc2).join(',')).join('\n') + '\n'], {type:'text/csv'}));
+  a.download = name; a.click(); URL.revokeObjectURL(a.href);
+  toast(name + ' downloaded');
+});
+
 let searchT;
 $('search').addEventListener('input', () => {
   clearTimeout(searchT);
@@ -950,6 +1328,7 @@ $('btnMask').addEventListener('click', () => {
   $('btnMask').classList.toggle('on', MASK);
   renderGrid($('search').value.trim());
   renderInsights();
+  renderDashboard();
   if ($('brief').value) { $('brief').value = buildBriefing(); }
 });
 

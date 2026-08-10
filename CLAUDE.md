@@ -177,9 +177,27 @@ plus question shape (analytical keywords, multiple questions, length) and routes
 deep, ≥6 → balanced, else fast. The chosen model and the reason are always surfaced to the
 user (`#aiMeta`). Keep routing logic in the pure layer.
 
+**Two views.** `#views` switches between **Dashboard** (full-width overview — the default
+landing view after load) and **Workbench** (the original split: transaction grid + findings /
+insights / AI tabs). Non-specialist users live on the Dashboard; analysts drill into the
+Workbench. Anything added to one must respect `MASK` in both.
+
+**Dashboard aggregation** (pure layer): `classifyNominal` maps Sage UK nominal ranges to
+kinds; `classifyTx` is direction-aware — sales/purchase types use document sign
+(SI/PI +, SC/PC -), and journals apply double-entry signs (a JD to an income nominal
+*reduces* income). Only genuine sales/purchase documents populate the customer/supplier
+rankings — bank and journal accounts are excluded. `buildDashboard` returns KPIs, monthly
+income/expense series, expense categories, top customers/suppliers, a P&L split and a VAT
+summary. Transactions with unreadable dates are counted in totals but cannot be plotted —
+`undated`/`undatedIncome`/`undatedExpense` exist so the chart discloses the gap rather than
+silently under-reporting. Never let a surface report a total it did not actually examine.
+
 **Smoke test (sage.html)** after any change:
 
-1. Demo loads; strip shows 4 critical / 5 warnings / 6 info; all 15 detector families appear.
+1. Demo loads and lands on **Dashboard**; strip shows 4 critical / 5 warnings / 6 info;
+   all 15 detector families appear in the Workbench.
+1b. Dashboard: KPI row, monthly grouped-bar chart with the undated-transactions note,
+   ranked bars filled, P&L and VAT summaries reconcile, both report CSVs download.
 2. Click a finding row-link → grid scrolls, row highlighted.
 3. Mask toggle hides Account + Details in grid, top-accounts list, and regenerated briefing.
 4. Insights: Benford chart renders with observed bars + expected markers; data table opens.
