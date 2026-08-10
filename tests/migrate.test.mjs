@@ -386,22 +386,30 @@ const rec = (a, b) => X.reconcile(a, b);
   const r = rec(a, b);
   ok('a duplicated posting on one side is caught', !r.clean, JSON.stringify(r.txDiff));
 }
-// Per-account aggregation sums multiple rows for the same code.
+// Per-account aggregation sums multiple rows for the same code — but in a TRIAL BALANCE
+// a repeated code is an export defect, so it is summed AND disclosed. Two rows that
+// happen to cancel must not disappear into a clean verdict.
 {
   const a = 'N/C,Name,Debit,Credit\n1200,Bank,600.00,\n1200,Bank,400.00,\n';
   const b = 'Account,Debit,Credit\n1200 - Bank,1000.00,\n';
   const r = rec(a, b);
-  ok('rows for one account are aggregated before comparison', r.clean,
-     JSON.stringify(r.stats) + ' ' + JSON.stringify(r.warnings));
+  eq('rows for one account are aggregated before comparison', r.lines[0].a, 1000);
+  eq('and the totals agree', r.lines[0].delta, 0);
+  ok('a repeated code in a trial balance blocks clean', !r.clean, JSON.stringify(r.warnings));
+  ok('and is disclosed', r.warnings.some(w => /repeats account code/i.test(w)),
+     JSON.stringify(r.warnings));
 }
-// Penny-level float accumulation must not manufacture a spurious delta.
+// In a transaction list a repeated account code is normal, not a defect.
 {
-  let a = 'N/C,Name,Debit,Credit\n', b = 'Account,Debit,Credit\n';
-  for (let k = 0; k < 300; k++) a += '1200,Bank,0.01,\n';
-  b += '1200 - Bank,3.00,\n';
+  let a = 'Date,Ref,N/C,Debit,Credit\n', b = 'Date,Ref,Account,Debit,Credit\n';
+  for (let k = 0; k < 300; k++){
+    a += `01/06/2026,TX${k},1200,0.01,\n`;
+    b += `01/06/2026,TX${k},1200 - Bank,0.01,\n`;
+  }
   const r = rec(a, b);
-  ok('300 penny postings sum to £3.00 without drift', r.clean,
-     JSON.stringify(r.lines) + ' ' + JSON.stringify(r.warnings));
+  ok('a repeated code in a transaction list is not flagged', r.clean,
+     JSON.stringify(r.warnings));
+  eq('300 penny postings sum to £3.00 without drift', r.lines[0].a, 3);
 }
 
 /* ==================================================================
@@ -413,6 +421,9 @@ const rec = (a, b) => X.reconcile(a, b);
   ok('the demo pair does not reconcile clean', !r.clean);
   eq('demo yields 2 deltas', r.stats.deltas, 2);
   eq('demo yields 1 Sage-only account', r.stats.onlyA, 1);
+  // The demo must exercise a false-clean guard rather than pass it by luck.
+  ok('demo demonstrates the unreadable-amount exclusion',
+     r.warnings.some(w => /unreadable amount/i.test(w)), JSON.stringify(r.warnings));
 }
 {
   // Every demo export must still detect, convert and re-parse.
@@ -431,6 +442,267 @@ const rec = (a, b) => X.reconcile(a, b);
     ok(`demo ${fname} output re-parses`, X.parseCSV(X.toCSV(emitted)).length === emitted.length + 1);
     ok(`demo ${fname} raises at least one issue (it is deliberately dirty)`, out.issues.length > 0);
   }
+}
+
+
+/* ==================================================================
+   Second audit — parseMoney parity with its siblings
+   ================================================================== */
+
+// sage.html's parseMoney and bom.html's parseNum both refuse a comma that is not a
+// thousands separator. This file used to strip every comma, so "9,50" became 950 —
+// and through convertNominal the opening journal balanced perfectly at 100x, which
+// means the delta check could never catch it.
+eq('"9,50" refused', X.parseMoney('9,50'), null);
+eq('"4,25" refused', X.parseMoney('4,25'), null);
+eq('"1.250,00" refused', X.parseMoney('1.250,00'), null);
+eq('"1,2,3" refused', X.parseMoney('1,2,3'), null);
+eq('"1,234.56" still accepted', X.parseMoney('1,234.56'), 1234.56);
+
+// Sage's own ODBC/report notation. Refusing it made convertNominal drop whole accounts
+// from the opening journal and then blame the imbalance on a missing control account.
+eq('trailing minus', X.parseMoney('1250.00-'), -1250);
+eq('CR suffix', X.parseMoney('1250.00 CR'), -1250);
+eq('DR suffix', X.parseMoney('450.00 DR'), 450);
+{
+  const r = conv(NOM_HDR + '\n1200,Bank,,,"9,50"\n3200,Retained,,,"-9,50"\n', 'nominal', X.convertNominal);
+  ok('a decimal-comma balance is refused, not posted at 100x',
+     /not a readable amount/i.test(issueText(r)), issueText(r));
+}
+
+/* ==================================================================
+   rootTypeFor — must agree with parseMoney about the same cell
+   ================================================================== */
+
+eq('"4,000" gets no root type', X.rootTypeFor('4,000'), null);
+eq('"4e3" gets no root type', X.rootTypeFor('4e3'), null);
+eq('"0x10" gets no root type', X.rootTypeFor('0x10'), null);
+eq('"-1" gets no root type', X.rootTypeFor('-1'), null);
+// A 5-digit chart is a different scheme, not a chart where every account is suspense.
+eq('a 5-digit code gets no root type', X.rootTypeFor('40000'), null);
+eq('9999 is the top of the suspense range', X.rootTypeFor('9999').parent, 'Suspense / Mispostings');
+{
+  const r = conv(NOM_HDR + '\n40000,Sales - Consultancy,,45200.00,\n12000,Bank,45200.00,,\n',
+                 'nominal', X.convertNominal);
+  ok('a non-default chart says so rather than filing everything as suspense',
+     /may not use the Sage 50 UK default/i.test(issueText(r)) && !/suspense\/mispostings range/i.test(issueText(r)),
+     issueText(r));
+}
+
+/* ==================================================================
+   accountCode — a collision merges two accounts and hides a real delta
+   ================================================================== */
+
+eq('a Sage sub-account keeps its suffix', X.accountCode('1200-01'), '1200-01');
+eq('and its sibling is distinct', X.accountCode('1200-02'), '1200-02');
+eq('an ERPNext spaced-dash name still yields the code', X.accountCode('1200 - Bank Current Account - BW'), '1200');
+eq('an Excel float code normalises', X.accountCode('1200.0'), '1200');
+eq('an Excel thousands-formatted code normalises', X.accountCode('1,200'), '1200');
+{
+  const a = 'N/C,Name,Debit,Credit\n1200-01,Bank A,500.00,\n1200-02,Bank B,300.00,\n';
+  const b = 'Account,Debit,Credit\n1200-01 - Bank A,800.00,\n1200-02 - Bank B,0.00,\n';
+  const r = rec(a, b);
+  ok('a misallocation between two sub-accounts does not reconcile clean', !r.clean,
+     JSON.stringify(r.lines));
+  eq('both sub-accounts are compared separately', r.lines.length, 2);
+}
+
+/* ==================================================================
+   parseSide — the three new false-clean routes
+   ================================================================== */
+
+// The ERPNext v15 Trial Balance shape: period movement of 0.00 alongside a closing
+// balance. Reading the explicit zeros as the answer destroyed every figure in the ledger.
+{
+  const erp = 'Account,Debit,Credit,Closing Balance\n' +
+    '1100 - Debtors Control - BW,0.00,0.00,27515.00\n' +
+    '1200 - Bank Current Account - BW,0.00,0.00,18930.50\n' +
+    '2100 - Creditors Control - BW,0.00,0.00,-38664.50\n';
+  const sage = 'N/C,Name,Debit,Credit,Balance\n' +
+    '1100,Debtors,0.00,0.00,27515.00\n' +
+    '1200,Bank,0.00,0.00,999.99\n' +
+    '2100,Creditors,0.00,0.00,-38664.50\n';
+  const r = rec(sage, erp);
+  ok('explicit zero legs fall through to the balance column', !r.clean, JSON.stringify(r.lines));
+  const line = r.lines.find(l => l.code === '1200');
+  eq('and the real discrepancy surfaces', Math.round(line.delta * 100) / 100, -17930.51);
+  eq('the other accounts match', r.stats.matched, 2);
+}
+// An amount column that exists but is never populated is not a ledger of nil balances.
+{
+  const r = rec('N/C,Name,Balance\n1200,Bank,\n4000,Sales,\n',
+                'Account,Balance\n1200 - Bank,\n4000 - Sales,\n');
+  ok('two files with no figures at all do not reconcile clean', !r.clean, JSON.stringify(r.warnings));
+  ok('and the empty rows are disclosed', r.warnings.some(w => /no amount in any/i.test(w)),
+     JSON.stringify(r.warnings));
+}
+// Shape detection failing on BOTH sides used to drop to totals-only in silence.
+{
+  const a = 'Tran Date,Refn,N/C,Debit,Credit\n01/04/2026,SI-1001,4000,,500.00\n02/04/2026,SI-1002,4000,,300.00\n';
+  const b = 'Tran Date,Refn,Account,Debit,Credit\n01/04/2026,SI-9999,4000 - Sales - BW,,800.00\n';
+  const r = rec(a, b);
+  ok('Sage’s own Tran Date / Refn labels are recognised', r.txDiff !== null,
+     JSON.stringify(r.warnings) + ' ' + JSON.stringify(r.notes));
+  ok('and different invoices on each side do not reconcile clean', !r.clean,
+     JSON.stringify(r.txDiff));
+}
+{
+  // A side with a date but no ref cannot be compared at transaction level. Say so.
+  const a = 'Date,N/C,Debit,Credit\n01/04/2026,4000,,500.00\n';
+  const b = 'Date,Account,Debit,Credit\n01/04/2026,4000 - Sales,,500.00\n';
+  const r = rec(a, b);
+  ok('a totals-only comparison is disclosed',
+     (r.notes || []).some(n => /account totals only/i.test(n)) ||
+     r.warnings.some(w => /transaction-level/i.test(w)),
+     JSON.stringify(r.notes) + ' ' + JSON.stringify(r.warnings));
+}
+// Which columns were read must be visible — an ERPNext TB has several amount columns.
+{
+  const r = rec('N/C,Name,Debit,Credit\n1200,Bank,100.00,\n', 'Account,Debit,Credit\n1200 - Bank,100.00,\n');
+  ok('both sides name the columns actually read',
+     (r.notes || []).some(n => /^Sage columns read:/.test(n)) &&
+     (r.notes || []).some(n => /^ERPNext columns read:/.test(n)), JSON.stringify(r.notes));
+  ok('and they name the real header text', (r.notes || []).join(' ').includes('"Debit"'),
+     JSON.stringify(r.notes));
+}
+// A ragged row's fields are misaligned, so its amounts are not the file's amounts.
+{
+  // Five cells under a four-cell header: an unquoted comma in the account name.
+  const r = rec('N/C,Name,Debit,Credit\n1200,Bank,100.00,\n4000,Sales, Europe,100.00,\n',
+                'Account,Debit,Credit\n1200 - Bank,100.00,\n4000 - Sales,100.00,\n');
+  ok('a misaligned row blocks clean', !r.clean, JSON.stringify(r.warnings));
+  ok('and is disclosed as a column-count problem',
+     r.warnings.some(w => /different number of columns/i.test(w)), JSON.stringify(r.warnings));
+}
+// Transaction references differing only in case are the same document (false DIRTY).
+{
+  const a = 'Date,Ref,N/C,Debit,Credit\n01/06/2026,si-1001,1200,100.00,\n';
+  const b = 'Date,Ref,Account,Debit,Credit\n01/06/2026,SI-1001,1200 - Bank,100.00,\n';
+  const r = rec(a, b);
+  ok('reference case does not manufacture a difference', r.clean,
+     JSON.stringify(r.txDiff) + ' ' + JSON.stringify(r.warnings));
+}
+
+/* ==================================================================
+   detectEntity — importing creditors as customers is unrecoverable
+   ================================================================== */
+
+// Sage supplier records carry a Credit Limit too, so the header bonus used to outvote
+// a filename that plainly said SUPPLIERS.CSV.
+{
+  const H = 'Account Reference,Name,Address Line 1,Town,Postcode,Telephone,Credit Limit,Balance'.split(',');
+  for (const f of ['SUPPLIERS.CSV', 'purchase_ledger.csv', 'creditors.csv'])
+    eq(`${f} is detected as suppliers despite a Credit Limit column`, X.detectEntity(H, f).key, 'suppliers');
+  for (const f of ['customers.csv', 'sales_ledger.csv', 'debtors.csv'])
+    eq(`${f} is detected as customers`, X.detectEntity(H, f).key, 'customers');
+  const d = X.detectEntity(H, 'export1.csv');
+  ok('with no filename hint the party type is declared ambiguous', !!d.ambiguousWith,
+     JSON.stringify({key: d.key, ambiguousWith: d.ambiguousWith}));
+}
+{
+  // Headers and filename disagreeing is a conflict to raise, not a vote to win.
+  // Generic reference column (both party types match it), but a header wording that
+  // votes customers while the filename says purchase ledger.
+  const H = 'Account Reference,Name,Address Line 1,Town,Postcode,Customer Credit Limit'.split(',');
+  const d = X.detectEntity(H, 'purchase_ledger.csv');
+  eq('the filename decides which way it is treated', d.key, 'suppliers');
+  ok('but the disagreement is declared ambiguous', !!d.ambiguousWith,
+     JSON.stringify({key: d.key, ambiguousWith: d.ambiguousWith}));
+}
+
+/* ==================================================================
+   convertItems — the checks that only existed in convertNominal
+   ================================================================== */
+
+{
+  const r = conv(ITEM_HDR + '\nZ-3,Unreadable cost,12,n/a,10.00,Each\n', 'items', X.convertItems);
+  ok('an unreadable amount is reported', /not a readable amount/i.test(issueText(r)), issueText(r));
+}
+{
+  const r = conv(ITEM_HDR + '\nZ-2,Blank cost,12,,10.00,Each\n', 'items', X.convertItems);
+  ok('stock with no cost price warns just as an explicit zero does',
+     /nil valuation|no cost price/i.test(issueText(r)), issueText(r));
+}
+{
+  const r = conv(ITEM_HDR + '\nxr-lic-01,Lower,1,1.00,2.00,Each\nXR-LIC-01,Upper,1,1.00,2.00,Each\n',
+                 'items', X.convertItems);
+  ok('stock codes differing only in case are flagged as a collision',
+     /Duplicate stock code/i.test(issueText(r)), issueText(r));
+}
+
+/* ==================================================================
+   convertParties — the whole address was discarded when line 1 was blank
+   ================================================================== */
+
+{
+  const r = conv('Account Reference,Name,Address Line 1,Address Line 2,Town,Postcode\n' +
+                 'A1,Alpha Ltd,,Suite 2,Liverpool,L1 1AA\n' +
+                 'A2,Beta Ltd,,,Leeds,LS1 1AA\n' +
+                 'A3,Gamma Ltd,1 High St,,Hull,HU1 1AA\n',
+                 'customers', X.convertParties, 'Customer');
+  eq('an address survives a blank Address Line 1', r.addresses.length, 3);
+  eq('and keeps its town', r.addresses[0]['City/Town'], 'Liverpool');
+}
+
+/* ==================================================================
+   Ragged rows and formula injection, across every converter
+   ================================================================== */
+
+{
+  const hdr = 'Account Reference,Name,Address Line 1,Town,Postcode,VAT Registration Number';
+  const rows = rowsOf(hdr + '\nA1,Smith, Jones & Co,1 High St,Liverpool,L1 1AA,GB123456789\n');
+  const map = X.mapHeaders(rows[0], X.ENT.customers.aliases);
+  const r = X.convertParties(rows.slice(1), map, 'Customer', rows[0].length);
+  ok('a misaligned row is reported as blocking',
+     r.issues.some(i => i.sev === 'high' && /different number of columns/i.test(i.text)), issueText(r));
+}
+{
+  const hdr = 'Account Reference,Name,Address Line 1,Town,Postcode';
+  const rows = rowsOf(hdr + '\nA3,=cmd|\'/c calc\'!A1,1 High St,Liverpool,L1 1AA\n');
+  const map = X.mapHeaders(rows[0], X.ENT.customers.aliases);
+  const r = X.convertParties(rows.slice(1), map, 'Customer', rows[0].length);
+  ok('a formula-shaped value is called out', /treat.*as a formula|starts? with = or @/i.test(issueText(r)),
+     issueText(r));
+  eq('but the value itself is left intact for the import', r.out[0]['Customer Name'], "=cmd|'/c calc'!A1");
+}
+
+/* ==================================================================
+   convertNominal — double-counting, signed legs, contradicting balance
+   ================================================================== */
+
+{
+  const r = conv(NOM_HDR + '\n1200,Bank,18930.50,,\n1200,Bank,18930.50,,\n2100,Creditors,,18930.50,\n',
+                 'nominal', X.convertNominal);
+  eq('a duplicated account is not opened at twice its balance', r.totals.dr, 18930.50);
+  ok('and the duplicate is reported', /Duplicate nominal code/i.test(issueText(r)), issueText(r));
+  eq('the journal carries one line for it', r.journal.filter(j => /^1200/.test(j.Account)).length, 1);
+}
+{
+  const r = conv(NOM_HDR + '\n1200,Bank,-500.00,,\n2100,Creditors,,-500.00,\n', 'nominal', X.convertNominal);
+  eq('a negative debit becomes a credit', r.journal[0].Credit, '500.00');
+  eq('a negative credit becomes a debit', r.journal[1].Debit, '500.00');
+  // The pair now balances legitimately — Credit 500 against Debit 500 — rather than by
+  // two negative legs cancelling, which ERPNext would reject or sign-invert.
+  eq('the totals are positive amounts', [r.totals.dr, r.totals.cr], [500, 500]);
+  ok('no emitted leg is negative',
+     r.journal.every(j => !/^-/.test(j.Debit) && !/^-/.test(j.Credit)), JSON.stringify(r.journal));
+}
+{
+  const r = conv(NOM_HDR + '\n1200,Bank,5000.00,3000.00,2000.00\n', 'nominal', X.convertNominal);
+  eq('a row with both legs is netted into one posting', r.journal[0].Debit, '2000.00');
+  eq('and carries no credit', r.journal[0].Credit, '');
+  ok('a balance column that disagrees is not needed here', r.totals.dr === 2000, JSON.stringify(r.totals));
+}
+{
+  const r = conv(NOM_HDR + '\n1200,Bank,5000.00,,2000.00\n', 'nominal', X.convertNominal);
+  ok('legs disagreeing with the balance column are reported as blocking',
+     r.issues.some(i => i.sev === 'high' && /balance column says/i.test(i.text) &&
+                        /Account 1200/.test(i.text)), issueText(r));
+}
+{
+  const r = conv(NOM_HDR + '\n,Retained earnings,,5000.00,\n', 'nominal', X.convertNominal);
+  ok('an account lost for want of a code is blocking, not advisory',
+     r.issues.some(i => i.sev === 'high' && /no account code/i.test(i.text)), issueText(r));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

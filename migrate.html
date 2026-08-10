@@ -215,16 +215,35 @@ function parseCSV(text){
   return rows;
 }
 
+// Kept deliberately identical in behaviour to sage.html's parseMoney and bom.html's
+// parseNum. When these three disagree, the same cell converts one way and audits another.
 function parseMoney(s){
-  if (s == null || String(s).trim() === '') return null;
-  let t = String(s).replace(/[£$\s]/g,'');
+  if (s == null) return null;
+  if (typeof s === 'number') return isFinite(s) ? s : null;
+  let t = String(s).trim();
+  if (t === '') return null;
+  t = t.replace(/[£$\u00a0]/g,'').trim();
   let neg = false;
-  if (/^\(.*\)$/.test(t)){ neg = true; t = t.slice(1,-1); }
-  t = t.replace(/,/g,'');
+  if (/^\(.*\)$/.test(t)){ neg = true; t = t.slice(1,-1).trim(); }
+  // Trailing minus and CR/DR suffixes are Sage's own ODBC and report export notation.
+  // Refusing them made convertNominal exclude whole accounts from the opening journal
+  // and then blame the resulting imbalance on a missing control account.
+  const suf = t.match(/^(.*?)\s*(CR|DR)$/i);
+  if (suf){ t = suf[1].trim(); if (suf[2].toUpperCase() === 'CR') neg = !neg; }
+  if (/-$/.test(t)){ neg = !neg; t = t.slice(0,-1).trim(); }
+  t = t.replace(/\s/g,'');
+  if (t === '') return null;
+  // A comma must be a genuine thousands separator. "9,50" is a European decimal comma or
+  // a typo, and stripping it posts the opening balance at 100x — while still balancing,
+  // so the delta check cannot catch it.
+  if (t.indexOf(',') !== -1){
+    if (!/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) return null;
+    t = t.replace(/,/g,'');
+  }
   if (!/^-?(\d+\.?\d*|\.\d+)$/.test(t)) return null;   // strict — "8odd" must not parse as 8
   if (neg && t[0] === '-') return null;                // "(-5.00)" is contradictory, not +5
   const n = parseFloat(t);
-  return isNaN(n) ? null : (neg ? -n : n);
+  return isFinite(n) ? (neg ? -n : n) : null;
 }
 
 /* ---------- entity detection ---------- */
@@ -233,7 +252,7 @@ const ENT = {
   customers: {
     label: 'Customers',
     aliases: {
-      ref:['accountreference','accountref','acref','ac','accountcode','code','customercode'],
+      ref:['accountreference','accountref','acref','ac','accountcode','code','customercode','customerreference','customerref'],
       name:['name','companyname','customername','accountname'],
       addr1:['addressline1','address1','street1','address'],
       addr2:['addressline2','address2','street2'],
@@ -252,7 +271,7 @@ const ENT = {
   suppliers: {
     label: 'Suppliers',
     aliases: {
-      ref:['accountreference','accountref','acref','ac','accountcode','code','suppliercode'],
+      ref:['accountreference','accountref','acref','ac','accountcode','code','suppliercode','supplierreference','supplierref'],
       name:['name','companyname','suppliername','accountname'],
       addr1:['addressline1','address1','street1','address'],
       addr2:['addressline2','address2','street2'],
@@ -310,23 +329,51 @@ function mapHeaders(headers, aliases){
 // customers and suppliers share a column shape, so the hint is load-bearing there
 function detectEntity(headers, nameHint){
   const hint = String(nameHint||'').toLowerCase();
-  let best = null, bestScore = 0, tiedWith = null;
+  const headerSaysSupplier = headers.some(h => /supplier/i.test(h));
+  const headerSaysCustomer = headers.some(h => /customer/i.test(h));
+  const headerVote = headerSaysSupplier === headerSaysCustomer ? null
+    : (headerSaysSupplier ? 'suppliers' : 'customers');
+  const hintVote = /supplier|purchase|creditor|payable/.test(hint) ? 'suppliers'
+    : /customer|sales.?ledger|debtor|receivable/.test(hint) ? 'customers' : null;
+  let best = null, bestScore = 0, tiedWith = null, ties = [];
   for (const key in ENT){
     const e = ENT[key];
     const map = mapHeaders(headers, e.aliases);
     if (!e.signature.every(f => f in map)) continue;
     let score = Object.keys(map).length + e.bonus.filter(f => f in map).length * 2;
-    if (key === 'suppliers' && (headers.some(h => /supplier/i.test(h)) || /supplier|purchase|creditor/.test(hint))) score += 8;
-    if (key === 'customers' && (headers.some(h => /customer|creditlimit/i.test(normKey(h))) || /customer|sales.?ledger|debtor/.test(hint))) score += 8;
-    if (key === 'items' && /product|stock|item/.test(hint)) score += 4;
-    if (key === 'nominal' && /nominal|trial|tb|account/.test(hint)) score += 4;
-    if (score > bestScore){ bestScore = score; best = {key, map}; tiedWith = null; }
-    else if (score === bestScore && best){ tiedWith = key; }
+    // Header evidence and filename evidence are kept apart. Sage supplier records carry
+    // a Credit Limit too, so a "creditlimit" header used to hand customers +8 and outvote
+    // a filename that plainly said SUPPLIERS.CSV. The filename is the stronger signal
+    // precisely because the columns are identical, so it is applied last and decisively.
+    if (key === 'suppliers' && headerVote === 'suppliers') score += 8;
+    if (key === 'customers' && headerVote === 'customers') score += 8;
+    let hintScore = 0;
+    if (key === 'suppliers' && /supplier|purchase|creditor|payable/.test(hint)) hintScore = 40;
+    if (key === 'customers' && /customer|sales.?ledger|debtor|receivable/.test(hint)) hintScore = 40;
+    if (key === 'items' && /product|stock|item/.test(hint)) hintScore = 20;
+    if (key === 'nominal' && /nominal|trial|tb|chart|account/.test(hint)) hintScore = 20;
+    score += hintScore;
+    if (score > bestScore){ bestScore = score; best = {key, map, hinted: hintScore > 0}; tiedWith = null; ties = []; }
+    else if (score === bestScore && best){ tiedWith = key; ties.push(key); }
   }
   // Customers and suppliers share a column shape. When nothing in the headers or
   // the filename breaks the tie, say so loudly rather than guessing — importing
   // creditors as customers is not a recoverable mistake.
-  if (best) best.ambiguousWith = tiedWith;
+  // Report every tie, not just the last one to arrive.
+  if (best){ best.ambiguousWith = tiedWith; best.ambiguousWithAll = ties; }
+  // Customers and suppliers share a column shape exactly. Without a filename to break it,
+  // say so even when a header bonus produced a numerical winner — importing creditors as
+  // customers is not a recoverable mistake, and a margin of a point or two is not evidence.
+  if (best && (best.key === 'customers' || best.key === 'suppliers') && !best.ambiguousWith){
+    const other = best.key === 'customers' ? 'suppliers' : 'customers';
+    const om = mapHeaders(headers, ENT[other].aliases);
+    const otherFits = ENT[other].signature.every(f => f in om);
+    // Ambiguous when nothing distinguishes them, and ALSO when the headers and the
+    // filename disagree — "Customer Ref" columns in a file called purchase_ledger.csv is
+    // a conflict to raise, not a vote to win. Either way the user is asked.
+    if (otherFits && (!best.hinted || (headerVote && hintVote && headerVote !== hintVote)))
+      best.ambiguousWith = other;
+  }
   return best;
 }
 
@@ -334,9 +381,34 @@ function detectEntity(headers, nameHint){
 
 function getRow(row, map){ return f => f in map ? String(row[map[f]] ?? '').trim() : ''; }
 
-function convertParties(rows, map, kind){  // kind: 'Customer' | 'Supplier'
+// Every converter indexes positionally, so a row of the wrong width has each field after
+// the extra separator read from the wrong column. An unquoted comma in a company name is
+// the ordinary cause, and the only symptom used to be a nonsense VAT-number warning.
+function checkWidth(rows, width, push){
+  const bad = [];
+  rows.forEach((r, idx) => { if (r.length !== width) bad.push((idx + 2) + ' (' + r.length + ' fields)'); });
+  if (bad.length) push('high', bad.length + ' row' + (bad.length > 1 ? 's have' : ' has') +
+    ' a different number of columns from the header, which has ' + width +
+    ' — every value after the extra or missing separator is read from the wrong column. Usually an unquoted comma inside a name or description. Rows: ' +
+    bad.slice(0, 12).join(', ') + '.');
+}
+
+// Excel and LibreOffice execute a cell beginning = + - @ when the file is opened. These
+// CSVs are opened by the client's accountant before import, so a value shaped like a
+// formula is called out rather than silently mangled — altering it would corrupt the
+// import, and this data has to survive intact.
+function checkFormulaInjection(values, push){
+  const hits = values.filter(v => /^[=@]/.test(String(v == null ? '' : v).trim()));
+  if (hits.length) push('high', hits.length + ' value' + (hits.length > 1 ? 's start' : ' starts') +
+    ' with = or @, which spreadsheets treat as a formula when the exported CSV is opened: ' +
+    hits.slice(0, 5).map(v => JSON.stringify(String(v).slice(0, 40))).join(', ') +
+    '. Left exactly as-is so the import is not corrupted — clear them at source before anyone opens the file in Excel.');
+}
+
+function convertParties(rows, map, kind, width){  // kind: 'Customer' | 'Supplier'
   const out = [], addresses = [], issues = [], seen = new Map(), seenNames = new Map();
   const push = (sev, text) => issues.push({sev, text});
+  if (width) checkWidth(rows, width, push);
   rows.forEach((r, idx) => {
     const g = getRow(r, map);
     const ref = g('ref'), name = g('name');
@@ -355,13 +427,16 @@ function convertParties(rows, map, kind){  // kind: 'Customer' | 'Supplier'
     const vat = g('vatno').replace(/\s/g,'');
     if (vat && !/^(GB)?\d{9}(\d{3})?$|^(GB)?(GD|HA)\d{3}$/.test(vat))
       push('med', name + ': VAT number "' + g('vatno') + '" does not look like a UK VAT registration');
-    if (!g('postcode') && g('addr1')) push('med', name + ': address has no postcode');
+    // Address Line 1 is one optional field, not the presence test for the whole record.
+    // Gating on it discarded "Suite 2, Liverpool, L1 1AA" entirely, with no count.
+    const hasAddress = ['addr1','addr2','town','county','postcode'].some(f => g(f));
+    if (!g('postcode') && hasAddress) push('med', name + ': address has no postcode');
     out.push(kind === 'Customer'
       ? {'Customer Name': name, 'Customer Type': 'Company', 'Customer Group': 'All Customer Groups',
          'Territory': 'All Territories', 'Tax ID': vat, 'Customer Details': ref ? 'Sage ref: ' + ref : ''}
       : {'Supplier Name': name, 'Supplier Type': 'Company', 'Supplier Group': 'All Supplier Groups',
          'Tax ID': vat, 'Supplier Details': ref ? 'Sage ref: ' + ref : ''});
-    if (g('addr1')) addresses.push({
+    if (hasAddress) addresses.push({
       'Address Title': name, 'Address Type': 'Billing',
       'Address Line 1': g('addr1'), 'Address Line 2': g('addr2'),
       'City/Town': g('town'), 'County': g('county'), 'Postal Code': g('postcode'),
@@ -369,24 +444,39 @@ function convertParties(rows, map, kind){  // kind: 'Customer' | 'Supplier'
       'Link Document Type': kind, 'Link Name': name
     });
   });
+  checkFormulaInjection(out.map(o => o[kind + ' Name']).concat(addresses.map(a => a['Address Line 1'])), push);
   return {out, addresses, issues};
 }
 
-function convertItems(rows, map){
+function convertItems(rows, map, width){
   const out = [], issues = [], seen = new Map();
   const push = (sev, text) => issues.push({sev, text});
+  if (width) checkWidth(rows, width, push);
   rows.forEach((r, idx) => {
     const g = getRow(r, map);
     const code = g('code'), desc = g('desc');
     if (!code){ push('high', 'Row ' + (idx+2) + ': missing stock code — skipped'); return; }
-    if (seen.has(code)) push('high', 'Duplicate stock code ' + code + ' (rows ' + (seen.get(code)+2) + ' and ' + (idx+2) + ')');
-    else seen.set(code, idx);
+    // ERPNext on MariaDB's default collation is case-insensitive, so "xr-lic-01" and
+    // "XR-LIC-01" are one item and the second import row overwrites the first.
+    // convertParties already normalised names; this did not.
+    const codeKey = code.toLowerCase().replace(/\s+/g,' ').trim();
+    if (seen.has(codeKey)) push('high', 'Duplicate stock code ' + code + ' (rows ' + (seen.get(codeKey)+2) + ' and ' + (idx+2) +
+      ') — item codes are matched case-insensitively on import, so these will overwrite each other');
+    else seen.set(codeKey, idx);
+    // An amount that will not read is a defect to report, not a blank to pass through.
+    // convertNominal raised a high issue for this; its sibling raised nothing at all.
+    for (const [f, label] of [['qty','quantity'], ['costPrice','cost price'], ['salePrice','sale price']])
+      if (g(f) !== '' && parseMoney(g(f)) == null)
+        push('high', code + ': ' + label + ' "' + g(f) + '" is not a readable amount — it will import as blank');
     const qty = parseMoney(g('qty'));
     const cost = parseMoney(g('costPrice'));
     const sale = parseMoney(g('salePrice'));
     if (qty != null && qty < 0) push('high', code + ': negative stock quantity (' + qty + ') — investigate before migrating');
     if (cost != null && sale != null && sale > 0 && cost > sale) push('med', code + ': cost price ' + cost + ' exceeds sale price ' + sale);
-    if (cost != null && cost === 0 && qty > 0) push('med', code + ': stock on hand with zero cost — valuation will be wrong');
+    // A missing cost values the stock at nil exactly as an explicit zero does.
+    if ((cost == null || cost === 0) && qty > 0)
+      push('med', code + ': ' + (cost === 0 ? 'stock on hand with zero cost' : 'stock on hand with no cost price') +
+        ' — ' + qty + ' units will import at nil valuation');
     let uom = g('uom');
     if (!uom){ uom = 'Nos'; push('med', code + ': no unit of sale — defaulted to "Nos"'); }
     out.push({'Item Code': code, 'Item Name': desc || code, 'Item Group': g('category') || 'All Item Groups',
@@ -394,12 +484,18 @@ function convertItems(rows, map){
       'Valuation Rate': cost != null ? cost : '', 'Standard Selling Rate': sale != null ? sale : '',
       'Opening Stock': qty != null && qty > 0 ? qty : ''});
   });
+  checkFormulaInjection(out.map(o => o['Item Code']).concat(out.map(o => o['Item Name'])), push);
   return {out, issues};
 }
 
 // Sage 50 UK default nominal ranges → ERPNext root types
 function rootTypeFor(code){
-  const n = parseInt(code, 10);
+  // parseInt prefix-parses: "4,000" became 4 and filed a sales nominal under fixed
+  // assets. Require the whole string to be digits, so this agrees with parseMoney and
+  // accountCode about the same cell.
+  const raw = String(code == null ? '' : code).trim();
+  if (!/^\d{1,4}$/.test(raw)) return null;
+  const n = parseInt(raw, 10);
   if (isNaN(n)) return null;
   if (n <= 999) return {root:'Asset', parent:'Fixed Assets'};
   if (n <= 1999) return {root:'Asset', parent:'Current Assets'};
@@ -410,22 +506,37 @@ function rootTypeFor(code){
   if (n <= 5999) return {root:'Expense', parent:'Purchases'};
   if (n <= 6999) return {root:'Expense', parent:'Direct Expenses'};
   if (n <= 8999) return {root:'Expense', parent:'Overheads'};
-  return {root:'Expense', parent:'Suspense / Mispostings'};
+  return {root:'Expense', parent:'Suspense / Mispostings'};   // 9000-9999 only
 }
 
-function convertNominal(rows, map){
+// True only for the Sage 50 UK default 4-digit chart. A 5-digit or alphanumeric chart is
+// a different scheme entirely, and silently mapping it would file every account as an
+// expense in suspense.
+function isDefaultChartCode(code){ return /^\d{1,4}$/.test(String(code == null ? '' : code).trim()); }
+
+function convertNominal(rows, map, width){
   const coa = [], journal = [], issues = [];
   const push = (sev, text) => issues.push({sev, text});
   let dr = 0, cr = 0;
   const seen = new Map();
+  if (width) checkWidth(rows, width, push);
   rows.forEach((r, idx) => {
     const g = getRow(r, map);
     const code = g('code');
-    if (!code){ push('med', 'Row ' + (idx+2) + ': no account code — skipped'); return; }
-    if (seen.has(code)){ push('high', 'Duplicate nominal code ' + code); }
-    else seen.set(code, idx);
+    // Losing an account outright is worse than an unreadable amount on one, which is
+    // already high — a missing account leaves the opening journal short by its balance.
+    if (!code){ push('high', 'Row ' + (idx+2) + ': no account code — this account and its balance are excluded from both the chart of accounts and the opening journal'); return; }
+    // A repeated code is not two accounts, it is one exported twice. Adding both legs
+    // opens the account at double its balance while the journal still balances, so the
+    // delta check cannot catch it.
+    if (seen.has(code)){
+      push('high', 'Duplicate nominal code ' + code + ' (rows ' + (seen.get(code)+2) + ' and ' + (idx+2) +
+        ') — only the first is used; adding both would open the account at twice its balance');
+      return;
+    }
+    seen.set(code, idx);
     const rt = rootTypeFor(code);
-    if (!rt){ push('med', 'Account ' + code + ': non-numeric code — assign a root type manually'); }
+    if (!rt) push('med', 'Account ' + code + ': not a 1-4 digit Sage default nominal code — assign a root type manually. This chart may not use the Sage 50 UK default ranges.');
     else if (parseInt(code,10) >= 9000) push('med', 'Account ' + code + ' (' + g('name') + ') is in the Sage suspense/mispostings range — resolve its balance before cutover rather than migrating it');
     coa.push({'Account Number': code, 'Account Name': g('name') || 'Account ' + code,
       'Root Type': rt ? rt.root : '', 'Suggested Parent': rt ? rt.parent : '', 'Is Group': 0});
@@ -437,12 +548,28 @@ function convertNominal(rows, map){
       }
     if (unreadable) return;   // genuinely exclude the whole line, both legs
     let d = parseMoney(g('debit')), c = parseMoney(g('credit'));
+    const bal = parseMoney(g('balance'));
     // Consult the balance column when neither leg carries a value — including when
     // both legs are an explicit 0.00, which would otherwise mask a real balance.
     if ((d == null || d === 0) && (c == null || c === 0)){
-      const b = parseMoney(g('balance'));
-      if (b != null && b !== 0){ if (b > 0){ d = b; c = 0; } else { d = 0; c = -b; } }
+      if (bal != null && bal !== 0){ if (bal > 0){ d = bal; c = 0; } else { d = 0; c = -bal; } }
+    } else if (bal != null && Math.abs(((d || 0) - (c || 0)) - bal) > 0.005){
+      push('high', 'Account ' + code + ': debit ' + (d || 0).toFixed(2) + ' less credit ' + (c || 0).toFixed(2) +
+        ' is ' + ((d || 0) - (c || 0)).toFixed(2) + ', but the balance column says ' + bal.toFixed(2) +
+        '. The legs were used — confirm which is right before importing.');
     }
+    // A negative debit is a credit. Emitted verbatim it balances against itself, so the
+    // delta check passes while ERPNext rejects or sign-inverts the whole journal.
+    if (d != null && d < 0 && (c == null || c === 0)){ c = -d; d = 0; }
+    else if (c != null && c < 0 && (d == null || d === 0)){ d = -c; c = 0; }
+    if ((d != null && d < 0) || (c != null && c < 0)){
+      push('high', 'Account ' + code + ': debit and credit are both signed (' + (d || 0) + ' / ' + (c || 0) +
+        ') — this cannot be resolved into a single posting. Fix it at source; the line is excluded.');
+      return;
+    }
+    // One row carrying both a debit and a credit is two half-postings on one journal
+    // line. Net them so the emitted line is what a Journal Entry can actually hold.
+    if (d && c){ if (d > c){ d = Math.round((d - c) * 100) / 100; c = 0; } else { c = Math.round((c - d) * 100) / 100; d = 0; } }
     // Round each leg to the penny BEFORE accumulating, so the balance check sees
     // exactly the figures the emitted journal will contain.
     d = d == null ? 0 : Math.round(d * 100) / 100;
@@ -455,6 +582,7 @@ function convertNominal(rows, map){
         'Remarks': 'Opening balance migrated from Sage 50'});
     }
   });
+  checkFormulaInjection(coa.map(a => a['Account Name']), push);
   const delta = Math.round((dr - cr) * 100) / 100;
   if (journal.length && Math.abs(delta) > 0.005)
     push('high', 'Opening balances do not balance: debits ' + dr.toFixed(2) + ' vs credits ' + cr.toFixed(2) +
@@ -465,9 +593,23 @@ function convertNominal(rows, map){
 /* ---------- reconciliation ---------- */
 
 // Extract a leading account code from "4000 - Sales - CO" style ERPNext names
+// Extract the account code from "4000 - Sales - CO" style ERPNext names.
+//
+// The old version took the leading digits and stopped at the first non-digit, so the
+// Sage sub-accounts 1200-01 and 1200-02 both collapsed to "1200" — and a misallocation
+// between two bank accounts reconciled clean because both sides merged into one key.
+// ERPNext separates code from name with a SPACED dash; Sage sub-accounts use a bare one.
 function accountCode(s){
-  const m = String(s||'').trim().match(/^(\d{3,})/);
-  return m ? m[1] : String(s||'').trim();
+  let t = String(s == null ? '' : s).trim();
+  if (!t) return '';
+  const named = t.match(/^(\S+)\s+[-\u2013\u2014]\s+\S/);
+  if (named) t = named[1];
+  // A thousands-formatted code out of Excel is the same account as its plain form.
+  if (/^\d{1,3}(,\d{3})+$/.test(t)) t = t.replace(/,/g,'');
+  // Excel turns a numeric code into a float; "1200.0" and "1200" are one account.
+  const dot0 = t.match(/^(\d+)\.0+$/);
+  if (dot0) t = dot0[1];
+  return t;
 }
 
 const REC_ALIASES = {
@@ -475,9 +617,9 @@ const REC_ALIASES = {
   name:['name','accountname','description'],
   debit:['debit','debits','dr'],
   credit:['credit','credits','cr'],
-  balance:['balance','closingbalance','net','amount','netamount'],
-  date:['date','postingdate','transdate','transactiondate'],
-  ref:['ref','reference','voucherno','vouchernumber','invref']
+  balance:['balance','closingbalance','closingbalancedr','closing','netbalance','net','amount','netamount'],
+  date:['date','postingdate','transdate','trandate','transactiondate','entrydate','docdate'],
+  ref:['ref','reference','refn','exref','voucherno','vouchernumber','invref','invoiceno','documentno','voucher']
 };
 
 function parseSide(text){
@@ -490,32 +632,59 @@ function parseSide(text){
   if (!('debit' in map) && !('credit' in map) && !('balance' in map))
     return {error:'No debit/credit/balance amount column found — nothing to compare. Headers seen: ' + rows[0].join(', ')};
   const isTx = ('date' in map) && ('ref' in map);
+  // A side carrying only one half of the transaction shape cannot be compared at
+  // transaction level, and saying nothing about that looks identical to "no differences".
+  const partialTx = !isTx && (('date' in map) || ('ref' in map));
   const accounts = new Map();   // code → net (debit positive)
   const txKeys = new Map();     // "ref|signed amount" → count (transaction mode)
-  let badAmounts = 0, blankCodes = 0;
-  for (const r of rows.slice(1)){
+  const codeRows = new Map();   // code → row numbers, to catch duplicates in TB mode
+  const width = rows[0].length;
+  let badAmounts = 0, blankCodes = 0, noAmount = 0, ragged = 0;
+  rows.slice(1).forEach((r, ri) => {
     const g = getRow(r, map);
     const code = accountCode(g('code'));
-    if (!code){ blankCodes++; continue; }
+    // A row of a different width has every field after the extra separator shifted, so
+    // the amounts read are not the amounts in the file.
+    if (r.length !== width){ ragged++; return; }
+    if (!code){ blankCodes++; return; }
     // An unreadable amount must never coerce to zero — that is indistinguishable
     // from a genuine nil balance and can manufacture a false clean verdict.
     let unreadable = false;
     for (const f of ['debit','credit','balance'])
       if ((f in map) && g(f) !== '' && parseMoney(g(f)) == null) unreadable = true;
-    if (unreadable){ badAmounts++; continue; }
+    if (unreadable){ badAmounts++; return; }
     const d = parseMoney(g('debit')), c = parseMoney(g('credit'));
+    const b = parseMoney(g('balance'));
+    // A row where every amount cell is blank carries no figure to compare. Reading it as
+    // a genuine nil balance is what let two files containing no figures at all reconcile
+    // clean when the amount column was present but never populated.
+    if (d == null && c == null && b == null){ noAmount++; return; }
     let net;
-    if (d != null || c != null) net = (d || 0) - (c || 0);
-    else { const b = parseMoney(g('balance')); net = b == null ? 0 : b; }
+    // Consult the balance column when neither leg carries a VALUE — including when both
+    // are an explicit 0.00. ERPNext's own Trial Balance emits period movement of 0.00
+    // alongside a closing balance, and treating that as nil destroyed every figure in the
+    // ledger while reporting clean. convertNominal already did this; its sibling did not.
+    if ((d == null || d === 0) && (c == null || c === 0) && b != null && b !== 0) net = b;
+    else if (d != null || c != null) net = (d || 0) - (c || 0);
+    else net = b == null ? 0 : b;
+    if (codeRows.has(code)) codeRows.get(code).push(ri + 2); else codeRows.set(code, [ri + 2]);
     accounts.set(code, Math.round(((accounts.get(code) || 0) + net) * 100) / 100);
     if (isTx){
       // Signed, not absolute — a debit and a credit of the same size are opposite
       // postings, and abs() would let a fully reversed batch reconcile clean.
-      const k = g('ref') + '|' + net.toFixed(2);
+      // Case- and space-normalised: "si-1001" and "SI-1001" are the same document, and
+      // treating them as two produces a false DIRTY verdict on a correct migration.
+      const k = g('ref').trim().toLowerCase().replace(/\s+/g,' ') + '|' + net.toFixed(2);
       txKeys.set(k, (txKeys.get(k) || 0) + 1);
     }
-  }
-  return {accounts, txKeys, isTx, rowCount: rows.length - 1, badAmounts, blankCodes};
+  });
+  // In trial-balance mode one code appears once. Two rows for it is an export defect, and
+  // silently summing them lets a pair that happens to cancel disappear into a clean verdict.
+  const dupCodes = isTx ? [] : [...codeRows.entries()].filter(e => e[1].length > 1).map(e => e[0]);
+  return {accounts, txKeys, isTx, partialTx, rowCount: rows.length - 1,
+          badAmounts, blankCodes, noAmount, ragged, dupCodes,
+          columns: Object.keys(map).filter(f => f !== 'name')
+                     .map(f => f + '=' + JSON.stringify(rows[0][map[f]]))};
 }
 
 function reconcile(textA, textB){
@@ -552,16 +721,38 @@ function reconcile(textA, textB){
   }
   // Rows the parser could not use are not "no difference" — they are unexamined.
   // A clean verdict gates cutover, so anything unexamined must block it.
-  const warnings = [];
+  const warnings = [], notes = [];
   const side = (n, label, what) => { if (n) warnings.push(n + ' ' + label + ' row' + (n>1?'s':'') + ' ' + what + ' — excluded from this comparison'); };
   side(A.badAmounts, 'Sage', 'had an unreadable amount');
   side(B.badAmounts, 'ERPNext', 'had an unreadable amount');
   side(A.blankCodes, 'Sage', 'had no account code');
   side(B.blankCodes, 'ERPNext', 'had no account code');
+  side(A.noAmount, 'Sage', 'had no amount in any of the debit, credit or balance columns');
+  side(B.noAmount, 'ERPNext', 'had no amount in any of the debit, credit or balance columns');
+  side(A.ragged, 'Sage', 'had a different number of columns from the header, so its fields are misaligned');
+  side(B.ragged, 'ERPNext', 'had a different number of columns from the header, so its fields are misaligned');
+  const dup = (codes, label) => { if (codes.length) warnings.push(
+    label + ' repeats account code' + (codes.length > 1 ? 's' : '') + ' ' + codes.slice(0, 8).join(', ') +
+    ' — the rows were summed, but in a trial balance a repeated code is an export defect and two rows that cancel would vanish silently'); };
+  dup(A.dupCodes, 'Sage'); dup(B.dupCodes, 'ERPNext');
   if (A.isTx !== B.isTx) warnings.push('One side looks like a transaction list and the other like a trial balance — only account totals were compared, not individual transactions');
+  // Checked WITHIN each side, not just between them. When both sides failed transaction
+  // detection the tool dropped to totals-only and said nothing, so two ledgers holding
+  // entirely different invoices reconciled clean on their matching account totals.
+  const partial = (P, label) => { if (P.partialTx) warnings.push(
+    label + ' has a date or a reference column but not both, so no transaction-level comparison was possible — only account totals were compared'); };
+  partial(A, 'Sage'); partial(B, 'ERPNext');
+  if (!A.isTx && !B.isTx && !A.partialTx && !B.partialTx)
+    notes.push('Neither side carried both a date and a reference column, so this compared account totals only. Individual transactions were not matched.');
   const clean = deltas === 0 && onlyA === 0 && onlyB === 0 && warnings.length === 0 &&
     (!txDiff || (txDiff.missingInB.length === 0 && txDiff.missingInA.length === 0));
-  return {lines, txDiff, clean, warnings, stats:{matched, deltas, onlyA, onlyB, rowsA:A.rowCount, rowsB:B.rowCount}};
+  // Which columns were actually read. A file with duplicate headers, or an ERPNext Trial
+  // Balance whose closing columns are not the ones aliased, otherwise compares something
+  // other than what the user believes they are comparing, with nothing on screen to say so.
+  notes.push('Sage columns read: ' + A.columns.join(', '));
+  notes.push('ERPNext columns read: ' + B.columns.join(', '));
+  return {lines, txDiff, clean, warnings, notes,
+          stats:{matched, deltas, onlyA, onlyB, rowsA:A.rowCount, rowsB:B.rowCount}};
 }
 
 /* ---------- CSV emit ---------- */
@@ -626,6 +817,7 @@ const REC_DEMO_A = `N/C,Name,Debit,Credit
 5000,Cost of Sales,21350.00,
 7100,Rent,4500.00,
 7901,Bank Charges,131.00,
+2202,VAT Recoverable,fifty,
 `;
 const REC_DEMO_B = `Account,Debit,Credit
 0030 - Office Equipment - BW,12400.00,0.00
@@ -701,11 +893,12 @@ function addExport(name, text){
 function buildEntry(name, entityKey, rows, ambiguousWith){
   const map = mapHeaders(rows[0], ENT[entityKey].aliases);
   const dataRows = rows.slice(1);
+  const width = rows[0].length;   // so a misaligned row is reported, not converted silently
   let result;
-  if (entityKey === 'customers') result = convertParties(dataRows, map, 'Customer');
-  else if (entityKey === 'suppliers') result = convertParties(dataRows, map, 'Supplier');
-  else if (entityKey === 'items') result = convertItems(dataRows, map);
-  else result = convertNominal(dataRows, map);
+  if (entityKey === 'customers') result = convertParties(dataRows, map, 'Customer', width);
+  else if (entityKey === 'suppliers') result = convertParties(dataRows, map, 'Supplier', width);
+  else if (entityKey === 'items') result = convertItems(dataRows, map, width);
+  else result = convertNominal(dataRows, map, width);
   if (ambiguousWith)
     result.issues.unshift({sev:'high', text:'Could not tell whether this is a ' + ENT[entityKey].label +
       ' or a ' + ENT[ambiguousWith].label + ' export — the columns are identical and the filename gave no clue. It has been treated as ' +
@@ -841,9 +1034,15 @@ $('btnRec').addEventListener('click', () => {
       : '<span class="tag" style="background:var(--high-soft);color:var(--high)">DIFFERENCES</span>Reconciliation differences found') +
     '<small>' + s.matched + ' accounts matched · ' + s.deltas + ' deltas · ' + s.onlyA + ' Sage-only · ' + s.onlyB + ' ERPNext-only</small></h3>';
   for (const w of r.warnings) h += '<div class="issue high">' + esc(w) + '</div>';
+  // What this comparison actually looked at. A clean verdict on the wrong columns is
+  // still a clean verdict, so the columns read are stated whatever the outcome.
+  if (r.notes && r.notes.length)
+    h += '<div class="issue" style="border-left-color:var(--border);color:var(--muted)">' +
+      r.notes.map(esc).join('<br>') + '</div>';
   h += '<div class="tblwrap"><table class="data"><tr><th>Account</th><th style="text-align:right">Sage net</th><th style="text-align:right">ERPNext net</th><th style="text-align:right">Delta</th><th>Status</th></tr>';
   const mdLines = ['# Parallel-run reconciliation report','', 'Accounts matched: ' + s.matched + ' · deltas: ' + s.deltas + ' · Sage-only: ' + s.onlyA + ' · ERPNext-only: ' + s.onlyB, ''];
   if (r.warnings.length){ mdLines.push('## Rows excluded from the comparison', ''); r.warnings.forEach(w => mdLines.push('- ' + w)); mdLines.push(''); }
+  if (r.notes && r.notes.length){ mdLines.push('## What was compared', ''); r.notes.forEach(n => mdLines.push('- ' + n)); mdLines.push(''); }
   mdLines.push('| Account | Sage | ERPNext | Delta | Status |','|---|---|---|---|---|');
   for (const ln of r.lines){
     const bad = ln.status !== 'ok';

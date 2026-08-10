@@ -60,10 +60,13 @@ parallel run is **not possible** in the window. Consequences and required action
   `tests/sage.test.mjs` (116 assertions) is the regression suite — **keep it green**.
 - `migrate.html` — Migration X-Ray (Sage → ERPNext): convert exports to ERPNext import
   packs, parallel-run reconciliation, cutover checklist. Merged in PR #4, live.
-  Adversarially reviewed (15 agents): 12 defects found and fixed, three of them
-  critical false-clean reconciliation bugs. 17-case headless regression suite added —
-  keep it passing; the reconciliation "clean" verdict gates cutover, so any change that
-  can make it clean on unexamined data is a critical bug, not a nicety.
+  **Audited twice.** The first review (15 agents) found 12 defects, three of them
+  false-clean reconciliation bugs. The second, after `sage.html` and `bom.html` had raised
+  the bar, found 11 more — including three further false-clean routes and a `parseMoney`
+  that was weaker than its two siblings, so the same cell converted one way and audited
+  another. All fixed. `tests/migrate.test.mjs` (196 assertions, 21/21 mutations caught) is
+  the regression suite — **keep it passing**; the reconciliation "clean" verdict gates
+  cutover, so any change that can make it clean on unexamined data is a critical bug.
 - `.claude/skills/xray-conventions` + `.claude/skills/sage-migration` — auto-loaded
   project memory; `.claude/agents/migration-auditor` — adversarial pure-layer reviewer.
 - Client proposal artifact (ERPNext recommendation, MTD plan, costs, risks, phases):
@@ -86,13 +89,12 @@ if `atrium-accounts` is refused. Live URLs are now
 ## In flight / next steps
 
 - PR #6 open (draft): the Atrium shell plus the BOM costing fixes.
-- **Write `tests/migrate.test.mjs`.** It is now the only app with no committed suite. Its
-  17 fixed defects — three of them false-clean reconciliation bugs, and the reconciliation
-  verdict is what gates cutover — cannot currently be re-checked. Highest-value remaining
-  engineering task.
-- **Audit `migrate.html`'s pure layer again after that.** Every app audited so far has come
-  back with critical arithmetic defects in code that read fine; migrate.html was audited
-  before the other two, to a narrower brief, and its converters have changed since.
+- All four accounting-side jobs are done: every app has a committed suite
+  (81 / 116 / 196) and every app has been adversarially audited. `json.html` has neither,
+  and is the lowest-stakes of the four (payload QA, not client accounting data).
+- **Verify the ERPNext import column headers against the client's live v15 instance**
+  before any bulk import. Everything else is now pinned by tests; this is the one
+  remaining assumption in the converters that no test can check from here.
 - Consider raising with the client that the ledger tool now reports coverage
   (`net … over 184 of 186 rows`). If their real export produces a large gap there, that is
   a migration blocker worth knowing about early, not a display quirk.
