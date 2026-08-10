@@ -332,6 +332,30 @@ never read as a complete archive on its own. Rules the archive check must keep:
   up, and a nominal export carrying no debit/credit/balance column — that last one is the
   *account list*, which detects perfectly and holds none of the figures the opening
   position is built from.
+- **Each slot has an admission criterion beyond `detectEntity`, and it is load-bearing.**
+  `detectEntity` answers "which of the four convertible shapes is this", which is the right
+  question at conversion time and the wrong one here. The runbook itself asks for Aged
+  Debtors and Aged Creditors, in the same folder the user then drags in, and a balances
+  report detects as the party master on a filename hint — filling the slot while the actual
+  customer records were never exported. Party specs therefore require an address, VAT,
+  telephone or email column; the audit trail requires a VAT column, without which a bank
+  activity export (same shape, one account's postings) fills the slot that "cannot be
+  recreated". Both were live routes to a **complete** verdict over a missing export.
+- **Columns present is not values present.** A trial balance whose Balance column is empty
+  in every row passes every structural check and is the file the opening position is built
+  from, so `AMOUNT_FIELDS` values are parsed and blocked on when nothing is readable. A
+  nil-balance nominal code is a row the runbook asks for and is not a defect; a posting
+  with no readable amount in the audit trail is, and its coverage is disclosed.
+- **One mistyped year must not define the range.** A 90-day slice with a single `2036` typo
+  had a span over a year and a last date in the future, silencing the truncation check and
+  the staleness check together — one cell disarming both guards on the irreplaceable file.
+  `bulkRange` excludes rows stranded more than a year from the body of the file, names
+  them, and reports the period from what is left. It only applies above `BULK_MIN_N` rows
+  and a 90% share: a handful of dates spread over years is a short file, not a file with
+  outliers.
+- **`AUDIT_ALIASES` must carry Sage's real headers.** `Nominal A/C Ref` was missing, so a
+  correct, complete audit trail was told to re-run with more fields — advice to redo the
+  one export that cannot be redone late — and `isAudit` hung on the Type column alone.
 - **The audit trail is classified before `detectEntity` runs.** It carries an Account
   column, which is a `nominal` alias, so it would otherwise fill the trial-balance slot,
   never have its date coverage looked at, and make the real TB read as a duplicate.
@@ -402,7 +426,7 @@ auto-detect, per-account aggregation, ref+amount multiset diff), `accountCode`,
 
 **Smoke test (migrate.html)** after any change:
 
-0. `node tests/migrate.test.mjs` passes (298 assertions over the pure layer — the
+0. `node tests/migrate.test.mjs` passes (402 assertions over the pure layer — the
    regression suite; keep it green and extend it with each fix).
 0b. Lands on **Get the data out**. Demo archive loads 6 files and reads **incomplete**:
    products missing (blocking), plus the truncated-audit-trail, duplicate-slot,
@@ -454,11 +478,19 @@ where-used — must take the `cyclicNodes` Set, never the `findCycles` list.
   it into a plausible figure nobody questions. `fmtMoneySet` exists because two genuinely
   different values can format to the same 2dp string, which makes a "these disagree"
   message read as nonsense — it falls back to full precision when that happens.
+- **`parseNum(s, money)` takes the money flag for a reason.** It is called for quantities
+  and scrap percentages as well as costs, and `CR`/`DR` are package codes (crate, drum)
+  before they are credit and debit. Applying the ledger notation to every column made a qty
+  of `3 DR` parse as 3 — discarding the unit, completing a roll-up that had refused before
+  — and `2 CR` parse as −2, inventing a negative quantity that reached the ERPNext export.
+  Only `cost` and `parentCost` pass `true`. Sibling parity is a property of money mode.
 - `parseNum` refuses commas that are not thousands separators. `"9,50"` is a European
   decimal comma or a typo; stripping it blindly turns 9.50 into 950. It also reads Sage's
   bracket negatives, trailing minus and `CR`/`DR` suffixes — it is the same parser as
   `sage.html`'s and `migrate.html`'s `parseMoney`, and it had silently drifted from both
-  until `tests/migrate.test.mjs` started comparing the three directly.
+  until `tests/migrate.test.mjs` started comparing the three directly. All three now also
+  refuse a cell that states its sign **twice**: `(-5.00)` was always refused for it, while
+  `(1250.00-)` said the same thing and quietly returned `+1250` everywhere.
 - The ERPNext export carries `Scrap %` and `Qty Consumed Per Unit` so the import can
   reproduce the cost this app displayed. An export that cannot reproduce the number the
   user signed off is not a valid export.
@@ -478,7 +510,7 @@ header alias to decide which convention applies; never test `OBSOLETE_RE` direct
 
 **Smoke test (bom.html)** after any change:
 
-0. `node tests/bom.test.mjs` passes (81 assertions over the pure layer, one per fixed
+0. `node tests/bom.test.mjs` passes (97 assertions over the pure layer, one per fixed
    defect — this is the regression suite, keep it green and extend it with each detector).
    `node tests/migrate.test.mjs` also has to pass: it compares this app's `parseNum`
    against its two siblings, so a change here fails that suite rather than this one.
@@ -495,8 +527,8 @@ header alias to decide which convention applies; never test `OBSOLETE_RE` direct
 
 ## Testing beyond the smoke tests
 
-Three committed suites, one per accounting app: `tests/bom.test.mjs` (81 assertions),
-`tests/sage.test.mjs` (116) and `tests/migrate.test.mjs` (298). Each slices its app at the
+Three committed suites, one per accounting app: `tests/bom.test.mjs` (97 assertions),
+`tests/sage.test.mjs` (116) and `tests/migrate.test.mjs` (402). Each slices its app at the
 DOM-layer marker, evaluates the pure half in a `vm` context with no `document`, and asserts
 against the exact inputs that broke each fixed defect. Run them with
 `node tests/<app>.test.mjs`. Never write a throwaway harness in a scratch directory — an
@@ -516,12 +548,35 @@ guards were broken one at a time (`parseMoney` accepting `(-5.00)`, the transact
 reverting to absolute amounts, `warnings` no longer blocking a clean verdict, journal legs
 left unrounded, quotes opening mid-cell, `accountCode` truncating at the first non-digit,
 the filename no longer overriding header bonuses, and so on). **21 of 21 mutations are
-caught.** The Phase 0 archive block was mutation-tested the same way — **21 of 21** —
+caught.** The Phase 0 archive block was mutation-tested the same way — **40 of 40 across
+three sweeps** —
 and it earned its keep immediately: one assertion turned out to cover nothing, because
 the guard it tested (a `must`-column check in `analyseArchiveFile`) was unreachable for
 every spec, detection having already refused those columns. It was replaced with a check
 detection does *not* make. Do the same after adding a block of assertions — passing is not
 evidence, and three weak assertions have now been found and fixed this way.
+
+**Mutation testing is necessary and not sufficient, and the Phase 0 block proves both
+halves.** It passed 21 of 21 mutations and then an adversarial review found four further
+routes to a false `complete` — aged-debtor reports filling the party slots, a bank export
+filling the audit slot, one mistyped year disarming two guards at once, and a trial balance
+whose figures were all blank. A mutation sweep shows the assertions you wrote can fail; it
+says nothing about the checks you never thought to write. Run the `migration-auditor` agent
+as well, and treat "the suite is green and the mutants all die" as the floor.
+
+Two harness lessons from the same round, both worth keeping:
+
+- **`JSON.stringify` renders `null`, `NaN`, `Infinity` and `-Infinity` identically**, so a
+  comparator built on it is blind to exactly the values these parsers exist to refuse. The
+  one case in the parity table that pinned the non-finite guard could never fail. `enc()`
+  now encodes non-finite numbers and `-0` distinctly, and the guards themselves are
+  additionally asserted with `===`, deliberately not through the comparator that was blind
+  to them.
+- **A mutation that survives is not always a coverage gap** — check whether it is reachable
+  before writing an assertion for it. Deleting the `isFinite` guard looked survivable
+  because `"Infinity"` never clears the strict regex; the guard is genuinely reachable via a
+  400-digit all-digits string, which `parseFloat` turns into `Infinity`. That input is in
+  the case table now.
 
 `json.html` has no suite. It is the lowest-stakes app (payload QA, not client accounting
 data) and has never been audited.

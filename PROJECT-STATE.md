@@ -57,7 +57,7 @@ parallel run is **not possible** in the window. Consequences and required action
   "how do I…?" guide: 17 answers phrased as jobs, each with what the same job was called
   in Sage, plus a Sage→ERPNext translation table. Search matches the whole entry (so
   "refund" reaches the credit-note answer), ticks persist in localStorage, deep links
-  open one answer. **PR #10 open, not yet merged.**
+  open one answer. Merged in PR #10.
 - `sage.html` — Sage X-Ray (ledger workbench): 21 detector families, Benford analysis,
   AI briefing pack, consent-gated BYO-key Ask Claude with complexity model routing.
   Merged in PR #3, live on Pages. **Adversarially audited across four dimensions**
@@ -75,7 +75,7 @@ parallel run is **not possible** in the window. Consequences and required action
   false-clean reconciliation bugs. The second, after `sage.html` and `bom.html` had raised
   the bar, found 11 more — including three further false-clean routes and a `parseMoney`
   that was weaker than its two siblings, so the same cell converted one way and audited
-  another. All fixed. `tests/migrate.test.mjs` (196 assertions, 21/21 mutations caught) is
+  another. All fixed. `tests/migrate.test.mjs` (402 assertions, 40 mutations caught) is
   the regression suite — **keep it passing**; the reconciliation "clean" verdict gates
   cutover, so any change that can make it clean on unexamined data is a critical bug.
 - `.claude/skills/xray-conventions` + `.claude/skills/sage-migration` — auto-loaded
@@ -89,8 +89,8 @@ parallel run is **not possible** in the window. Consequences and required action
   visibly wrong: negative costs rendered as positive, unusable scrap silently treated as
   zero, half-populated rows dropped without a count, an export that could not reproduce the
   displayed cost, and `"9,50"` parsing as 950. All fixed, plus nine more. 20 detector
-  families now. `tests/bom.test.mjs` (81 assertions) is the regression suite — **keep it
-  green**; it is the only committed test suite in the repo.
+  families now. `tests/bom.test.mjs` (97 assertions) is the regression suite — **keep it
+  green**.
 
 **Repo rename is done:** `Json` → `atrium-accounts`. Note the MCP GitHub tools in a
 session scoped to the old name still work via GitHub's API redirect — pass `repo: "json"`
@@ -110,6 +110,16 @@ if `atrium-accounts` is refused. Live URLs are now
   had never learned Sage's trailing-minus and `CR`/`DR` notations, so a `480.00-` rebate
   was a negative cost in two apps and an unreadable cell in the third. Fixed. The sibling
   rule is now enforced by the build rather than by memory.
+- **Then audited by four parallel agents, which found more than the build did.** The archive
+  block had already passed 21/21 mutations; adversarial review found four further routes to
+  a false **complete** verdict — the aged debtors/creditors reports the runbook itself asks
+  for filling the customer and supplier slots, a bank activity export filling the audit
+  slot, one mistyped year disarming the truncation *and* staleness checks together, and a
+  trial balance whose figures were all blank. Also: the `parseNum` sibling fix above had
+  applied a money notation to quantity and scrap columns, so a qty of `3 DR` (a drum) parsed
+  as 3 and completed a roll-up that had correctly refused. All fixed. The XSS and privacy
+  contract was attacked directly and held — proven clean, not assumed. Suites now
+  **97 / 116 / 402**, 40 mutations caught across three sweeps.
 
 ## In flight / next steps
 - **Walk help.html against the client's real ERPNext instance once it exists.** The steps
@@ -127,7 +137,7 @@ if `atrium-accounts` is refused. Live URLs are now
   accountant bought in (they hold the veto) · which MTD filing route. None of them are
   engineering work.
 - All four accounting-side jobs are done: every app has a committed suite
-  (81 / 116 / 298) and every app has been adversarially audited. `json.html` has neither,
+  (97 / 116 / 402) and every app has been adversarially audited. `json.html` has neither,
   and is the lowest-stakes of the four (payload QA, not client accounting data).
 - **Verify the ERPNext import column headers against the client's live v15 instance**
   before any bulk import. Everything else is now pinned by tests; this is the one

@@ -28,8 +28,15 @@ vm.runInContext(pure + '\n;globalThis.__X = {' + exposed.join(',') + '};\n})();'
 const X = ctx.__X;
 
 let pass = 0, fail = 0;
+// JSON.stringify renders null, NaN, Infinity and -Infinity all as the string "null", so a
+// plain stringify comparison is blind to exactly the values these parsers exist to refuse:
+// a sibling drifting to Infinity on "Infinity" compared equal to a sibling returning null,
+// and the assertion pinning that guard could never fail. -0 and 0 collide the same way.
+const enc = v => JSON.stringify(v, (k, x) =>
+  typeof x === 'number' && !isFinite(x) ? '<<' + String(x) + '>>'
+  : Object.is(x, -0) ? '<<-0>>' : x);
 const eq = (name, got, want) => {
-  const g = JSON.stringify(got), w = JSON.stringify(want);
+  const g = enc(got), w = enc(want);
   if (g === w) pass++;
   else { fail++; console.log(`FAIL  ${name}\n      got  ${g}\n      want ${w}`); }
 };
@@ -917,6 +924,136 @@ ACME01,Acme Lending, Ltd,1 Fenwick Street,Liverpool,L2 7NA,0151 496 0101,GB12345
   ok('and the unreadable-date disclosure', r.warnings.some(w => /rows carry a date this tool cannot read/.test(w)), arcText(r));
 }
 
+/* ---------- Phase 0, second audit ----------
+   Four false-clean routes found by adversarial review after the block above was already
+   mutation-tested at 21/21. Passing a mutation sweep says the assertions you wrote can
+   fail; it says nothing about the checks you never thought to write. */
+
+{
+  // The runbook itself tells the user to export Aged Debtors and Aged Creditors, into the
+  // same folder they then drag in. Both detect as party masters on filename hints.
+  const aged = 'A/C,Name,Credit Limit,Date,Ref,Details,Balance\nABC001,Acme Ltd,5000.00,01/04/2026,SI-1001,Invoice,1200.00\n';
+  const r = X.checkArchive([
+    {name:'aged_debtors.csv', text:aged}, {name:'aged_creditors.csv', text:aged},
+    {name:'products.csv', text:ITEM_OK}, {name:'nominal_tb.csv', text:NOM_OK},
+    {name:'audit_trail.csv', text:AUDIT_LONG}], TODAY);
+  eq('an aged debtors report does not fill the customer master slot', itemOf(r, 'customers').status, 'issues');
+  eq('nor an aged creditors report the supplier slot', itemOf(r, 'suppliers').status, 'issues');
+  eq('so the archive is incomplete', r.verdict, 'incomplete');
+  ok('and it says which file it is and where the real one comes from',
+     r.blocking.some(b => /aged_debtors\.csv/.test(b) && /balances or statement report/.test(b) &&
+                          /Customers module, not from a report/.test(b)), arcText(r));
+  ok('a real customer master with an address is still accepted',
+     itemOf(X.checkArchive(fullSet(), TODAY), 'customers').status === 'ok');
+}
+{
+  // A bank activity export is the same shape as the audit trail — one account's postings
+  // rather than the ledger — and it filled the slot that "cannot be recreated".
+  const bank = 'Date,Type,Ref,Details,Amount,Balance\n' +
+    Array.from({length:40}, (_, i) => '0' + (i % 9 + 1) + '/01/202' + (i % 3 + 4) + ',BP,CHQ' + i + ',Payment,10.00,1000.00').join('\n') + '\n';
+  const r = X.checkArchive(fullSet().map(f => f.name === 'audit_trail.csv' ? {name:'bank_activity_1200.csv', text:bank} : f), TODAY);
+  eq('a bank activity export does not fill the audit trail slot', itemOf(r, 'audit').status, 'issues');
+  ok('and is told what separates the two', r.blocking.some(b => /bank statement or activity export/.test(b)), arcText(r));
+  eq('the archive is incomplete', r.verdict, 'incomplete');
+}
+{
+  // One fat-fingered year used to set `max` on its own: the span jumped past a year and the
+  // last date landed in the future, so the truncation warning AND the staleness warning
+  // both vanished. A 90-day slice is exactly what the truncation check exists to catch.
+  const rows = [];
+  for (let i = 0; i < 89; i++) rows.push('SI,A' + i + ',4000,' + String(i % 28 + 1).padStart(2,'0') + '/0' + (i % 3 + 5) + '/2026,INV' + i + ',Goods,100.00,20.00,T1');
+  const clean = auditCSV(rows.join('\n') + '\n');
+  const typo  = auditCSV(rows.join('\n') + '\nSI,AX,4000,10/06/2036,INV40,Goods,100.00,20.00,T1\n');
+  const a = X.analyseArchiveFile('audit_trail.csv', clean, TODAY);
+  const b = X.analyseArchiveFile('audit_trail.csv', typo, TODAY);
+  ok('a 90-day slice is challenged', a.issues.some(i => /slice of the history/.test(i.text)), JSON.stringify(a.issues));
+  ok('and one mistyped year does not silence that', b.issues.some(i => /slice of the history/.test(i.text)), JSON.stringify(b.issues));
+  ok('nor the staleness check', b.issues.some(i => /Re-run this export on cutover day/.test(i.text)), JSON.stringify(b.issues));
+  ok('the stranded row is named rather than quietly dropped',
+     b.issues.some(i => /1 row sits more than a year away/.test(i.text) && /mistyped year/.test(i.text)), JSON.stringify(b.issues));
+  eq('and the reported period excludes it', X.fmtDateUTC(b.stats.last), X.fmtDateUTC(a.stats.last));
+  // The mirror case: Sage's 01/01/1980 placeholder inflates the span from the other end.
+  const old = X.analyseArchiveFile('audit_trail.csv', auditCSV(rows.join('\n') + '\nSI,AY,4000,01/01/1980,INV41,Goods,100.00,20.00,T1\n'), TODAY);
+  ok('an ancient placeholder date does not hide a truncated export either',
+     old.issues.some(i => /slice of the history/.test(i.text)), JSON.stringify(old.issues));
+  // But a genuinely short file is not a file with outliers.
+  const two = X.analyseArchiveFile('audit_trail.csv', AUDIT_LONG, TODAY);
+  eq('a two-row file keeps its full range rather than having half of it called an outlier',
+     X.fmtDateUTC(two.stats.last), '09/08/2026');
+  eq('and claims no outliers', two.stats.outliers, 0);
+  // The floor matters independently of the share test: 9 of 10 rows clears 90%, and on a
+  // ten-row file "the bulk" is not a thing that exists.
+  const ten = [];
+  for (let i = 0; i < 9; i++) ten.push('SI,A,4000,0' + (i+1) + '/05/2026,INV' + i + ',Goods,100.00,20.00,T1');
+  ten.push('SI,A,4000,01/05/2019,INV9,Goods,100.00,20.00,T1');
+  const small = X.analyseArchiveFile('audit_trail.csv', auditCSV(ten.join('\n') + '\n'), TODAY);
+  eq('below the floor the full range stands, however lopsided', small.stats.outliers, 0);
+  eq('and the early row is still part of the period', X.fmtDateUTC(small.stats.first), '01/05/2019');
+}
+{
+  // 01/01/2025-31/12/2025 is a full calendar year and spans 364 days. Warning on it would
+  // tell someone their complete year is a truncated export.
+  const yr = [];
+  for (let m = 1; m <= 12; m++) yr.push('SI,A,4000,01/' + String(m).padStart(2,'0') + '/2025,INV' + m + ',Goods,100.00,20.00,T1');
+  yr.push('SI,A,4000,31/12/2025,INVX,Goods,100.00,20.00,T1');
+  yr.unshift('SI,A,4000,01/01/2025,INV0,Goods,100.00,20.00,T1');
+  const a = X.analyseArchiveFile('audit_trail.csv', auditCSV(yr.join('\n') + '\n'), null);
+  eq('a full calendar year spans 364 days', a.stats.spanDays, 364);
+  ok('and is not called a slice of the history',
+     !a.issues.some(i => /slice of the history/.test(i.text)), JSON.stringify(a.issues));
+  const short = X.analyseArchiveFile('audit_trail.csv',
+    auditCSV('SI,A,4000,01/01/2025,I1,Goods,100.00,20.00,T1\nSI,A,4000,29/12/2025,I2,Goods,100.00,20.00,T1\n'), null);
+  ok('while 362 days still is', short.issues.some(i => /slice of the history/.test(i.text)), JSON.stringify(short.issues));
+}
+{
+  // Columns present is not values present. This detects, passes every structural check, and
+  // is the file the opening position gets built from.
+  const empty = 'N/C,Name,Balance\n4000,Sales,\n1200,Bank,\n5000,Purchases,\n';
+  const r = X.checkArchive(fullSet().map(f => f.name === 'nominal_tb.csv' ? {name:'nominal_tb.csv', text:empty} : f), TODAY);
+  ok('a trial balance whose figures are all blank blocks',
+     r.blocking.some(b => /present but not one row holds a readable figure/.test(b)), arcText(r));
+  eq('and the archive is incomplete', r.verdict, 'incomplete');
+  // A nil-balance nominal code is a row the runbook explicitly asks for, so a partial gap
+  // in the nominal export is not a defect.
+  const mixed = 'N/C,Name,Debit,Credit\n4000,Sales,,45200.00\n9999,Unused,,\n';
+  const m = X.analyseArchiveFile('nominal_tb.csv', mixed, TODAY);
+  ok('but a nil-balance nominal code is not reported as one',
+     !m.issues.some(i => /readable figure|readable amount/.test(i.text)), JSON.stringify(m.issues));
+  // In the audit trail it is a defect — that is the row that vanishes out of a total.
+  const badnet = auditCSV('SI,A,4000,01/04/2023,INV-1,Goods,#VALUE!,200.00,T1\nSI,A,4000,09/08/2026,INV-2,Goods,2400.00,480.00,T1\n');
+  const n = X.analyseArchiveFile('audit_trail.csv', badnet, TODAY);
+  ok('an unreadable amount in the audit trail is disclosed with its coverage',
+     n.issues.some(i => /1 of 2 rows have no readable amount/.test(i.text)), JSON.stringify(n.issues));
+}
+{
+  // Sage 50's real audit trail header set. A correct, complete export was being told to
+  // re-run with more fields — and with Type dropped it fell through to the nominal slot.
+  const real = 'No,Type,Account Ref,Nominal A/C Ref,Department Code,Details,Date,Reference,Ex.Ref,' +
+    'Net Amount,Tax Amount,T/C,Paid,Amount Paid,Bank Rec Date,User Name,Date Entered,Deleted\n' +
+    '1,SI,ABC001,4000,0,Goods,01/04/2023,INV-1,,1000.00,200.00,T1,N,0.00,,mgr,01/04/2023,N\n' +
+    '2,SI,ABC001,4000,0,Goods,09/08/2026,INV-2,,2400.00,480.00,T1,N,0.00,,mgr,09/08/2026,N\n';
+  const a = X.analyseArchiveFile('audit_trail.csv', real, TODAY);
+  eq('the real Sage audit trail is recognised', a.specKey, 'audit');
+  ok('and is not told to re-export a nominal column it already has',
+     !a.issues.some(i => /nominal code/.test(i.text)), JSON.stringify(a.issues));
+}
+{
+  const md = X.archiveManifest(X.checkArchive(fullSet([{name:'customers_old.csv', text:CUST_OK}]), TODAY), {}, 'now', '');
+  ok('a file carrying warnings is not filed for six-year retention as clean',
+     /ok, with warnings/.test(md), md);
+  // Checksums are keyed by filename, so a hashes map built from a different set of files
+  // must leave the column honest rather than borrowing a neighbour's digest. The checksum
+  // is the one column whose whole purpose is proving, years later, that a file is the file
+  // that was exported; a confidently wrong one makes a genuine archive look tampered with.
+  const stale = X.archiveManifest(X.checkArchive(fullSet(), TODAY),
+    {'some_other_file.csv':'deadbeef'}, 'now', '');
+  ok('a checksum from a different file set is not borrowed',
+     !/deadbeef/.test(stale) && (stale.match(/not computed/g) || []).length === 5, stale);
+  const weird = X.archiveManifest(X.checkArchive([{name:'a\nb|c.csv', text:CUST_OK}], TODAY), {}, 'now', '');
+  ok('and a newline in a filename cannot break the table open',
+     !/\n\s*b\\\|c\.csv/.test(weird) && /a b\\\|c\.csv/.test(weird), weird.split('\n').slice(4,12).join('\n'));
+}
+
 /* ---------- sibling parity ----------
    The rule this project keeps relearning: a fix that lands in one app and not its twin
    produces a confident wrong number. These load the siblings and compare them directly,
@@ -934,12 +1071,52 @@ function pureOf(file, expose){
 const SAGE = pureOf('sage.html', ['parseMoney','parseDate']);
 const BOM = pureOf('bom.html', ['parseNum']);
 
+// A parity table containing only inputs the parsers already agreed on has not been shown
+// to work. The last five string cases are ones where they genuinely diverged: the first two
+// because bom stripped whitespace before matching the suffix, so a split "C R" re-formed
+// into a credit marker and a bracket negative matched across an embedded newline — which a
+// quoted multi-line CSV cell really does produce.
 const MONEY_CASES = ['1,250.00','(1,250.00)','1250.00-','1250.00CR','1250.00 DR','(-5.00)','9,50',
-  '8odd','12abc','','   ','£1,250.00','-1250','1,2500.00','.5','5.','Infinity','1 250.00','(0.00)'];
-for (const c of MONEY_CASES)
-  eq('parseMoney agrees with sage.html on ' + JSON.stringify(c), X.parseMoney(c), SAGE.parseMoney(c));
-for (const c of MONEY_CASES)
-  eq('parseMoney agrees with bom.html parseNum on ' + JSON.stringify(c), X.parseMoney(c), BOM.parseNum(c));
+  '8odd','12abc','','   ','£1,250.00','-1250','1,2500.00','.5','5.','Infinity','1 250.00','(0.00)',
+  '1250 C R','1250 D R','(1,250.00\n)','(1250.00-)','(1,250.00)CR','1250.00-CR','-1250.00CR',
+  ' 1250.00','1250.00 CR',
+  // All digits, so it clears the strict regex, and parseFloat hands back Infinity. This
+  // is the input that makes the isFinite guard reachable — without it that guard looks
+  // like dead code and a mutation deleting it survives the whole suite.
+  '9'.repeat(400), '-' + '9'.repeat(400), '0.' + '0'.repeat(400) + '1'];
+// Non-string inputs reach a parser the moment an app gains a JSON input, and the three
+// disagreed on every one of them.
+const ODD_CASES = [1e21, 1e-7, -0, 0, NaN, Infinity, -Infinity, true, false, ['1250'], {v:1}, null, undefined];
+// The comparator itself, pinned. Everything below leans on it being able to see these.
+ok('the comparator can tell null from Infinity', enc(null) !== enc(Infinity), enc(null) + ' vs ' + enc(Infinity));
+ok('and null from NaN', enc(null) !== enc(NaN), enc(null) + ' vs ' + enc(NaN));
+ok('and 0 from -0', enc(0) !== enc(-0), enc(0) + ' vs ' + enc(-0));
+
+// Asserted with === rather than through eq(), deliberately. The non-finite values are
+// exactly the ones a stringify comparison cannot see, so pinning the guard that produces
+// them must not go through the same comparison that was blind to it.
+for (const [label, fn] of [['migrate', X.parseMoney], ['sage', SAGE.parseMoney], ['bom', v => BOM.parseNum(v, true)]]){
+  ok('the string "Infinity" is refused, not parsed — ' + label, fn('Infinity') === null, String(fn('Infinity')));
+  ok('the string "NaN" is refused — ' + label, fn('NaN') === null, String(fn('NaN')));
+  ok('a non-finite number argument is refused — ' + label, fn(Infinity) === null, String(fn(Infinity)));
+  ok('NaN itself is refused — ' + label, fn(NaN) === null, String(fn(NaN)));
+}
+for (const c of MONEY_CASES.concat(ODD_CASES)){
+  const label = typeof c === 'string' ? JSON.stringify(c) : String(c);
+  eq('parseMoney agrees with sage.html on ' + label, X.parseMoney(c), SAGE.parseMoney(c));
+  // bom's parseNum is the same parser in money mode; the non-money mode is asserted in
+  // tests/bom.test.mjs, because what it must refuse is a BOM question, not a ledger one.
+  eq('parseMoney agrees with bom.html parseNum(money) on ' + label, X.parseMoney(c), BOM.parseNum(c, true));
+}
+// The contradiction rule, stated once and checked in all three: a cell may declare its sign
+// once. "(-5.00)" was always refused for saying it twice; "(1250.00-)" said the same thing
+// and returned a confident +1250 everywhere.
+for (const [c, why] of [['(1250.00-)','bracket and trailing minus'], ['(1,250.00)CR','bracket and CR'],
+                        ['1250.00-CR','trailing minus and CR']]){
+  eq('a cell stating its sign twice (' + why + ') is refused — migrate', X.parseMoney(c), null);
+  eq('a cell stating its sign twice (' + why + ') is refused — sage', SAGE.parseMoney(c), null);
+  eq('a cell stating its sign twice (' + why + ') is refused — bom', BOM.parseNum(c, true), null);
+}
 
 const DATE_CASES = ['31/03/2026','31/02/2026','2026-03-31','2026-02-31','01/06/98','01/06/71','01/06/70',
   '1/6/2026','31.03.2026','2026-03-31T09:00:00','13/13/2026','','not a date','00/01/2026'];

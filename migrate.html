@@ -209,7 +209,7 @@ input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.7)}
       <div id="arcOut"></div>
     </div>
 
-    <p class="privacy">The manifest records filenames, row counts, column names, date ranges and checksums — metadata about the archive, never a value out of the ledger. File contents stay in this tab and are dropped when you clear or close it.</p>
+    <p class="privacy">The manifest records filenames, row and column counts, date ranges and checksums — metadata about the archive, never a value out of the ledger. File contents stay in this tab and are dropped when you clear or close it.</p>
   </div>
 
   <div class="tabBody" id="tab-convert">
@@ -289,17 +289,22 @@ function parseCSV(text){
 function parseMoney(s){
   if (s == null) return null;
   if (typeof s === 'number') return isFinite(s) ? s : null;
+  if (typeof s !== 'string' && typeof s !== 'boolean') return null;
   let t = String(s).trim();
   if (t === '') return null;
   t = t.replace(/[£$\u00a0]/g,'').trim();
-  let neg = false;
-  if (/^\(.*\)$/.test(t)){ neg = true; t = t.slice(1,-1).trim(); }
+  // `marks` counts how many times the cell states its sign. Once is notation; twice is a
+  // contradiction — "(1250.00-)" quietly returned +1250 in all three apps, while
+  // "(-5.00)" was refused for saying exactly the same thing.
+  let neg = false, marks = 0;
+  if (/^\(.*\)$/.test(t)){ neg = !neg; marks++; t = t.slice(1,-1).trim(); }
   // Trailing minus and CR/DR suffixes are Sage's own ODBC and report export notation.
   // Refusing them made convertNominal exclude whole accounts from the opening journal
   // and then blame the resulting imbalance on a missing control account.
   const suf = t.match(/^(.*?)\s*(CR|DR)$/i);
-  if (suf){ t = suf[1].trim(); if (suf[2].toUpperCase() === 'CR') neg = !neg; }
-  if (/-$/.test(t)){ neg = !neg; t = t.slice(0,-1).trim(); }
+  if (suf){ t = suf[1].trim(); marks++; if (suf[2].toUpperCase() === 'CR') neg = !neg; }
+  if (/-$/.test(t)){ neg = !neg; marks++; t = t.slice(0,-1).trim(); }
+  if (marks > 1) return null;
   t = t.replace(/\s/g,'');
   if (t === '') return null;
   // A comma must be a genuine thousands separator. "9,50" is a European decimal comma or
@@ -864,10 +869,13 @@ function fmtDateUTC(ms){
 // archive check has to recognise and measure it. Tested BEFORE detectEntity: a Sage audit
 // trail carries an Account column, which is a `nominal` alias, so it would otherwise be
 // classified as a trial balance and its date coverage never looked at.
+// `nominalacref` is Sage 50's actual header ("Nominal A/C Ref"). Without it a correctly and
+// fully exported audit trail was told to re-run with more fields — advice to redo the one
+// export that cannot be redone late — and `isAudit` hung on the Type column alone.
 const AUDIT_ALIASES = {
   type:['type','transactiontype','tp','trantype'],
   account:['accountref','account','accountreference','ac'],
-  nominal:['nc','nominalcode','nominal','ncode'],
+  nominal:['nc','nominalcode','nominal','ncode','nominalacref','nominalaccountref','nominalaccount','nominalref'],
   date:['date','transactiondate','postingdate','trandate','transdate'],
   ref:['reference','ref','invoiceref','invoiceno'],
   details:['details','description','narrative'],
@@ -876,13 +884,50 @@ const AUDIT_ALIASES = {
   tc:['tc','taxcode','vatcode','taxcodeused']
 };
 
+// Columns whose presence is checked structurally and whose *values* are then checked for
+// readability. Everywhere else in this repo, a total that omits rows must disclose its
+// coverage; an archive that reports a file as taken owes the same.
+const AMOUNT_FIELDS = {nominal:['debit','credit','balance'], audit:['net']};
+
+// Splits sorted timestamps into blocks separated by gaps of more than a year and returns
+// the largest. One mistyped year would otherwise define the whole range on its own — and
+// on a 90-day export that single cell pushed the span past a year and the last date into
+// the future, silencing the truncation check and the staleness check together.
+//
+// Only applied where "the bulk" means something: a handful of dates spread over years is a
+// short file, not a file with outliers, and excluding half of it would invent a range
+// nobody could reconcile against the data. Below the floor the full range stands.
+const BULK_MIN_N = 20, BULK_MIN_SHARE = 0.9;
+function bulkRange(ts){
+  if (!ts.length) return null;
+  const full = {first:ts[0], last:ts[ts.length-1], rows:ts.length, outliers:0};
+  if (ts.length < BULK_MIN_N) return full;
+  const GAP = 365 * 86400000;
+  const blocks = [{first:ts[0], last:ts[0], n:1}];
+  for (let i = 1; i < ts.length; i++){
+    const b = blocks[blocks.length - 1];
+    if (ts[i] - b.last > GAP) blocks.push({first:ts[i], last:ts[i], n:1});
+    else { b.last = ts[i]; b.n++; }
+  }
+  let best = blocks[0];
+  for (const b of blocks) if (b.n > best.n) best = b;
+  if (best.n / ts.length < BULK_MIN_SHARE) return full;
+  return {first:best.first, last:best.last, rows:best.n, outliers: ts.length - best.n};
+}
+
 // The Phase 0 runbook. `must` columns block — an export run with a reduced field list is a
 // file you cannot re-run once the licence lapses. `kind:'manual'` items are the ones no
 // CSV check can speak to; they are named here so the gate cannot quietly omit them.
 const EXPORT_SPECS = [
   { key:'customers', label:'Customer records', kind:'csv',
     must:{ref:'account reference', name:'name'},
-    want:{postcode:'postcode', vatno:'VAT registration number', phone:'telephone', balance:'balance'},
+    // The runbook itself asks for Aged Debtors, in the same folder. `A/C, Name, Credit
+    // Limit, Date, Ref, Balance` detects as the customer master, fills this slot and lets
+    // the archive read complete with the actual customer records never exported. A balances
+    // report carries no address, VAT number or contact — that is the line between them.
+    needOne:{postcode:'postcode', addr1:'address', vatno:'VAT registration number', phone:'telephone', email:'email'},
+    needOneNote:'so this is a balances or statement report (aged debtors, a statement list), not the customer master export. The master is the one nothing else in the archive rebuilds — export it from the Customers module, not from a report.',
+    want:{vatno:'VAT registration number', phone:'telephone', balance:'balance'},
     why:'Names, addresses, VAT numbers and account references for everyone you have ever invoiced. Nothing else in the archive rebuilds this — the audit trail holds the account reference, not the address behind it.',
     where:'Customers module → select every record → the export / CSV action on the module toolbar. Older versions put it under File → Export.',
     settings:[
@@ -893,7 +938,9 @@ const EXPORT_SPECS = [
     ] },
   { key:'suppliers', label:'Supplier records', kind:'csv',
     must:{ref:'account reference', name:'name'},
-    want:{postcode:'postcode', vatno:'VAT registration number', phone:'telephone', balance:'balance'},
+    needOne:{postcode:'postcode', addr1:'address', vatno:'VAT registration number', phone:'telephone', email:'email'},
+    needOneNote:'so this is a balances or statement report (aged creditors, a remittance list), not the supplier master export. Export it from the Suppliers module, not from a report.',
+    want:{vatno:'VAT registration number', phone:'telephone', balance:'balance'},
     why:'The same again for everyone who invoices you. Supplier VAT numbers in particular are needed to reclaim input VAT and are tedious to collect a second time.',
     where:'Suppliers module → select every record → the export / CSV action. Same dialog as customers.',
     settings:[
@@ -924,7 +971,13 @@ const EXPORT_SPECS = [
     ] },
   { key:'audit', label:'Full audit trail', kind:'csv', irreversible:true,
     must:{date:'date', net:'net amount'},
-    want:{type:'transaction type', nominal:'nominal code', ref:'reference', tax:'tax amount', tc:'tax code'},
+    // A bank activity export is Date, Type, Ref, Details, Amount — the same shape, one
+    // account's postings rather than the ledger. It filled this slot and the archive read
+    // complete with the real audit trail absent. VAT columns are what separate the ledger's
+    // own transaction record from a statement, and they are needed for the return anyway.
+    needOne:{tax:'tax amount', tc:'tax code'},
+    needOneNote:'so this is a bank statement or activity export rather than the audit trail. The audit trail carries the VAT on every posting; without it neither a VAT return nor the parallel-run reconciliation can be rebuilt from this archive.',
+    want:{type:'transaction type', nominal:'nominal code', ref:'reference'},
     why:'Every transaction Sage has ever posted. This is the file that cannot be recreated from anything else, the file HMRC means by “records”, and the file the whole parallel run is reconciled against. If only one thing comes out before the licence lapses, it is this.',
     where:'Financials module → Audit Trail → the detailed / transactional layout → export to CSV.',
     settings:[
@@ -1019,31 +1072,62 @@ function analyseArchiveFile(name, text, todayMs){
     push('med', 'no ' + missingWant.map(f => spec.want[f]).join(', ') + ' column' +
       (missingWant.length > 1 ? 's' : '') + '. Not fatal, but re-running with every field selected costs nothing today and is impossible later.');
 
-  let stats = {rows:data.length};
+  const stats0 = {rows:data.length};
+
+  // The columns being present is not the same as them holding anything. A trial balance
+  // whose Balance column is empty in every row detects perfectly, passes every structural
+  // check, and is the file the opening position gets built from.
+  const money = (AMOUNT_FIELDS[specKey] || []).filter(f => f in map);
+  if (money.length && data.length){
+    let withVal = 0;
+    for (const r of data) if (money.some(f => parseMoney(r[map[f]]) !== null)) withVal++;
+    stats0.amountRows = withVal;
+    if (!withVal)
+      push('high', 'the ' + money.map(f => (spec.needOne && spec.needOne[f]) || (spec.want && spec.want[f]) || f).join(' / ') +
+        ' column' + (money.length > 1 ? 's are' : ' is') + ' present but not one row holds a readable figure. The columns are there and the values are not.');
+    // A nominal code with a nil balance is a legitimate row the runbook asks for, so a
+    // partial gap there is not a defect. In the audit trail it is — a posting with no
+    // readable amount is exactly the row that vanishes out of a total.
+    else if (specKey === 'audit' && withVal < data.length)
+      push('med', (data.length - withVal) + ' of ' + data.length + ' rows have no readable amount; any total built from this file would cover the other ' + withVal + '.');
+  }
+
+  let stats = stats0;
   if (specKey === 'audit'){
-    let min = null, max = null, dated = 0, undated = 0;
+    const ts = [];
+    let dated = 0, undated = 0;
     for (const r of data){
       const d = parseDate(r[map.date]);
       if (!d){ undated++; continue; }
-      dated++;
-      const t = d.getTime();
-      if (min === null || t < min) min = t;
-      if (max === null || t > max) max = t;
+      dated++; ts.push(d.getTime());
     }
-    stats = {rows:data.length, dated, undated, first:min, last:max,
-      spanDays: (min !== null && max !== null) ? Math.round((max - min) / 86400000) : null};
+    ts.sort((a, b) => a - b);
+    const bulk = bulkRange(ts);
+    stats = Object.assign({}, stats0, {rows:data.length, dated, undated,
+      first: bulk ? bulk.first : null, last: bulk ? bulk.last : null,
+      spanDays: bulk ? Math.round((bulk.last - bulk.first) / 86400000) : null,
+      outliers: bulk ? bulk.outliers : 0});
     if (!dated){
       push('high', 'not one date in this file could be read, so there is no way to tell what period it covers — and the period it covers is the whole point of it.');
     } else {
       // Coverage is stated whenever a range is printed. A range derived from 60% of the
       // rows, presented as the range, is the same defect as a total that omits rows.
       if (undated) push('med', undated + ' of ' + data.length + ' rows carry a date this tool cannot read; the period reported for this file is taken from the other ' + dated + '.');
-      if (stats.spanDays !== null && stats.spanDays < 365)
-        push('med', 'covers ' + stats.spanDays + ' days (' + fmtDateUTC(min) + ' to ' + fmtDateUTC(max) +
+      // A single mistyped year sets min or max on its own, and one cell was enough to push
+      // the span past a year and the last date into the future — silencing the truncation
+      // check and the staleness check together. Rows stranded more than a year from the
+      // body of the file are reported and excluded from the period rather than defining it.
+      if (bulk.outliers)
+        push('med', bulk.outliers + ' row' + (bulk.outliers > 1 ? 's sit' : ' sits') + ' more than a year away from the rest of the file (the full spread is ' +
+          fmtDateUTC(ts[0]) + ' to ' + fmtDateUTC(ts[ts.length-1]) + '). Usually a mistyped year. They are excluded from the period below — check them, because on the raw range they would hide a truncated export.');
+      // 01/01/2025-31/12/2025 is a full calendar year and spans 364 days, so the threshold
+      // sits below it rather than on 365.
+      if (stats.spanDays !== null && stats.spanDays < 364)
+        push('med', 'covers ' + stats.spanDays + ' days (' + fmtDateUTC(stats.first) + ' to ' + fmtDateUTC(stats.last) +
           '). The audit trail export defaults to a date range — unless the company genuinely has not traded longer than that, this is a slice of the history rather than the history. Re-run it from the earliest transaction.');
-      if (todayMs != null && max !== null){
-        const age = Math.round((todayMs - max) / 86400000);
-        if (age > 7) push('med', 'the most recent transaction is ' + fmtDateUTC(max) + ', ' + age +
+      if (todayMs != null && stats.last !== null){
+        const age = Math.round((todayMs - stats.last) / 86400000);
+        if (age > 7) push('med', 'the most recent transaction is ' + fmtDateUTC(stats.last) + ', ' + age +
           ' days ago. Re-run this export on cutover day so the postings made in between are not stranded in Sage.');
       }
     }
@@ -1074,16 +1158,20 @@ function checkArchive(files, todayMs){
       blocking.push(spec.label + ': no file in the archive' + (spec.irreversible ? ' — and this is the one that cannot be recreated from anything else' : '') + '.');
       continue;
     }
-    if (found.length > 1)
-      warnings.push(spec.label + ': ' + found.length + ' files look like this export (' + found.map(f => f.name).join(', ') +
-        ') — keep one, or the archive holds two versions of the truth and nobody knows which was imported.');
     const issues = [];
+    // Recorded against the slot rather than pushed straight to `warnings`, so the manifest
+    // can tell a clean file from one that merely has no per-file issues of its own.
+    if (found.length > 1)
+      issues.push({sev:'med', text: spec.label + ': ' + found.length + ' files look like this export (' + found.map(f => f.name).join(', ') +
+        ') — keep one, or the archive holds two versions of the truth and nobody knows which was imported.'});
     for (const f of found) for (const i of f.issues) issues.push({sev:i.sev, text:f.name + ': ' + i.text});
     for (const i of issues) (i.sev === 'high' ? blocking : warnings).push(i.text);
+    // No slot-level `stats`: with two files in a slot it could only describe one of them
+    // while reading as the slot's. Coverage is carried per file and reported per file.
     items.push({key:spec.key, label:spec.label, kind:'csv',
       status: issues.some(i => i.sev === 'high') ? 'issues' : 'ok',
       files: found.map(f => ({name:f.name, rows:f.rowCount, columns:f.headers.length, stats:f.stats})),
-      issues, stats: found[0].stats});
+      issues});
   }
   for (const u of unknown)
     warnings.push('“' + u.name + '” was not recognised as any of the five Sage exports' +
@@ -1107,14 +1195,19 @@ function archiveManifest(res, hashes, stamp, expiry){
   md.push('');
   md.push('| Export | Status | File | Rows | Columns | Checksum (SHA-256) |');
   md.push('|---|---|---|---|---|---|');
-  const cell = v => String(v == null ? '' : v).replace(/\|/g, '\\|');   // a | in a filename must not split the row
+  // A | in a filename must not split the row, and a newline must not end it — either one
+  // spills the rest of the name into the document body as prose.
+  const cell = v => String(v == null ? '' : v).replace(/\|/g, '\\|').replace(/[\r\n]+/g, ' ');
   for (const it of res.items){
     if (!it.files.length){
       md.push('| ' + it.label + ' | ' + (it.kind === 'manual' ? 'not checkable here — tick by hand' : 'MISSING') + ' | — | — | — | — |');
       continue;
     }
+    // "ok" for a file carrying warnings files it for six-year retention as clean. The
+    // aged-debtors file that used to fill the customer slot was recorded exactly that way.
+    const st = it.status !== 'ok' ? 'issues' : it.issues.length ? 'ok, with warnings' : 'ok';
     for (const f of it.files)
-      md.push('| ' + it.label + ' | ' + (it.status === 'ok' ? 'ok' : 'issues') + ' | ' + cell(f.name) + ' | ' +
+      md.push('| ' + it.label + ' | ' + st + ' | ' + cell(f.name) + ' | ' +
         f.rows + ' | ' + f.columns + ' | ' + (H[f.name] || 'not computed') + ' |');
   }
   md.push('');
@@ -1329,11 +1422,13 @@ function renderStrip(){
   let issues = 0, high = 0;
   for (const l of LOADED){ issues += l.result.issues.length; high += l.result.issues.filter(i => i.sev === 'high').length; }
   // The archive chip comes first deliberately. Everything else in this app is recoverable.
-  const arc = ARC
-    ? (ARC.verdict === 'complete'
-        ? '<span class="chip info"><b>archive</b> CSV set complete</span>'
-        : '<span class="chip high"><b>' + ARC.blocking.length + '</b> blocking in the export archive</span>')
-    : '';
+  // No chip at all was the state where the exports have never been checked — the one
+  // genuinely unrecoverable state in this app, and the one it said nothing about.
+  const arc = !ARC
+    ? '<span class="chip"><b>export archive</b> not checked</span>'
+    : ARC.verdict === 'complete'
+      ? '<span class="chip info"><b>archive</b> CSV set complete</span>'
+      : '<span class="chip high"><b>' + ARC.blocking.length + '</b> blocking in the export archive</span>';
   $('strip').innerHTML = arc + (LOADED.length
     ? '<span class="chip"><b>' + LOADED.length + '</b> export' + (LOADED.length>1?'s':'') + ' loaded</span>' +
       (high ? '<span class="chip high"><b>' + high + '</b> blocking issues</span>' : '') +
@@ -1423,7 +1518,13 @@ $('btnPasteAdd').addEventListener('click', () => {
   $('paste').value = '';
 });
 $('btnUpload').addEventListener('click', () => $('fileInput').click());
-$('fileInput').addEventListener('change', e => { [...e.target.files].forEach(readFile); e.target.value = ''; });
+// Routed by active tab like the drop handler. Two buttons visible on the same tab doing
+// different things with the same files is worse than either behaviour on its own: the
+// archive check sat empty while the user believed they had supplied it.
+$('fileInput').addEventListener('change', e => {
+  const to = activeTab() === 'export' ? readArchiveFile : readFile;
+  [...e.target.files].forEach(to); e.target.value = '';
+});
 function readFile(file){
   const rd = new FileReader();
   rd.onload = () => addExport(file.name, rd.result);
@@ -1443,7 +1544,14 @@ window.addEventListener('drop', e => {
   const to = activeTab() === 'export' ? readArchiveFile : readFile;
   [...e.dataTransfer.files].forEach(to);
 });
-$('btnClear').addEventListener('click', () => { LOADED = []; renderEntities(); renderStrip(); toast('Cleared'); });
+// Clears both halves. The tab-0 copy promises file contents are dropped on clear, and this
+// button is the one most likely to be pressed for that reason — it was leaving every byte
+// of the ledger in ARCHIVE_FILES.
+$('btnClear').addEventListener('click', () => {
+  LOADED = []; ARCHIVE_FILES = []; ARC = null;
+  renderEntities(); renderArchive(); renderRunbook(); renderGate(); renderStrip();
+  toast('Cleared — loaded exports and the archive check');
+});
 $('btnDemo').addEventListener('click', () => {
   LOADED = [];
   for (const name in DEMO_FILES) addExport(name, DEMO_FILES[name]);
@@ -1510,7 +1618,12 @@ function exState(){
   if (!s.ticks || typeof s.ticks !== 'object') s.ticks = {};
   return s;
 }
-function exSave(s){ try { localStorage.setItem(EX_KEY, JSON.stringify(s)); } catch(e){} }
+// Returns whether the write actually landed. Quota, disabled storage and private-browsing
+// modes all throw here, and painting a tick green before knowing left four confirmed-looking
+// items above a gate that listed all four as outstanding, with no stated reason.
+function exSave(s){
+  try { localStorage.setItem(EX_KEY, JSON.stringify(s)); return true; } catch(e){ return false; }
+}
 
 function arcItem(key){ return ARC ? ARC.items.find(i => i.key === key) : null; }
 
@@ -1538,7 +1651,7 @@ function renderRunbook(){
     const it = arcItem(spec.key);
     let cls = 'pending', pill = 'idle', pillTxt = 'not checked';
     if (spec.kind === 'manual'){
-      if (s.ticks[spec.key]){ cls = 'good'; pill = 'ok'; pillTxt = 'confirmed by hand'; }
+      if (s.ticks[spec.key] === true){ cls = 'good'; pill = 'ok'; pillTxt = 'confirmed by hand'; }
       else { cls = 'pending'; pill = 'warn'; pillTxt = 'tick when done'; }
     } else if (it && ARC){
       if (it.status === 'ok'){
@@ -1573,7 +1686,7 @@ function renderRunbook(){
       }
     } else {
       h += '<label class="manualTick"><input type="checkbox" data-extick="' + esc(spec.key) + '"' +
-        (s.ticks[spec.key] ? ' checked' : '') + '><span>Done — and this tool has taken your word for it, because no CSV check can see this one.</span></label>';
+        (s.ticks[spec.key] === true ? ' checked' : '') + '><span>Done — and this tool has taken your word for it, because no CSV check can see this one.</span></label>';
     }
     h += '</div></details>';
   }
@@ -1590,7 +1703,7 @@ function gateHTML(){
     else if (it.status === 'issues') outstanding.push(it.label + ' — exported, but with problems that make it unusable later.');
   }
   for (const spec of EXPORT_SPECS)
-    if (spec.kind === 'manual' && !s.ticks[spec.key]) outstanding.push(spec.label + ' — not confirmed.');
+    if (spec.kind === 'manual' && s.ticks[spec.key] !== true) outstanding.push(spec.label + ' — not confirmed.');
   const warnCount = ARC ? ARC.warnings.length : 0;
   if (!outstanding.length)
     return '<div class="gate open"><b>Exports taken and verified.</b>The five CSV exports are present and readable, and the four things this tool cannot check have been confirmed by hand.' +
@@ -1644,8 +1757,20 @@ function runArchiveCheck(){
   renderArchive(); renderRunbook(); renderGate(); renderStrip();
 }
 function addArchiveFile(name, text){
-  ARCHIVE_FILES = ARCHIVE_FILES.filter(f => f.name !== name);
-  ARCHIVE_FILES.push({name, text:String(text || '')});
+  text = String(text || '');
+  const clash = ARCHIVE_FILES.find(f => f.name === name);
+  // Re-dropping the same file is idempotent. Two *different* files sharing a name is the
+  // normal case here — the runbook says to re-run the audit trail on cutover day, and Sage
+  // names it the same both times — and dropping one of them silently, on whichever
+  // FileReader happened to finish last, is how the wide export loses to the narrow one.
+  if (clash && clash.text === text){ runArchiveCheck(); return; }
+  if (clash){
+    let n = 2, alt;
+    do { alt = name.replace(/(\.[^.]*)?$/, ' (' + n + ')$1'); n++; }
+    while (ARCHIVE_FILES.some(f => f.name === alt));
+    name = alt;
+  }
+  ARCHIVE_FILES.push({name, text});
   runArchiveCheck();
 }
 function readArchiveFile(file){
@@ -1668,7 +1793,12 @@ $('expiryIn').addEventListener('change', e => {
 $('runbook').addEventListener('change', e => {
   const cb = e.target.closest('[data-extick]');
   if (!cb) return;
-  const s = exState(); s.ticks[cb.dataset.extick] = cb.checked; exSave(s);
+  const s = exState(); s.ticks[cb.dataset.extick] = cb.checked;
+  if (!exSave(s)){
+    cb.checked = !cb.checked;
+    toast('Could not save that tick — this browser is refusing local storage, so progress will not persist');
+    return;
+  }
   // Update this card in place rather than rebuilding the list — a tick must not move
   // anything else on the page while someone is working down it.
   const card = cb.closest('details.rb'), pill = card && card.querySelector('.pill');
@@ -1691,11 +1821,21 @@ function loadArchiveDemo(){
 }
 $('btnArcDl').addEventListener('click', async () => {
   if (!ARC) return;
+  // Hashing a real audit trail takes seconds, and the button has no busy state, so
+  // re-dropping or clearing during the wait is the natural thing to do. Both globals are
+  // snapshotted and re-checked afterwards: a manifest that describes one archive while
+  // carrying another's checksums makes a genuine export look tampered with years later,
+  // and clearing mid-hash used to throw and produce nothing at all, silently.
+  const snapArc = ARC, snapFiles = ARCHIVE_FILES;
   const hashes = {};
   let any = false;
-  for (const f of ARCHIVE_FILES){
+  for (const f of snapFiles){
     const hx = await sha256(f.text);
     if (hx){ hashes[f.name] = hx; any = true; }
+  }
+  if (ARC !== snapArc || ARCHIVE_FILES !== snapFiles){
+    toast('Archive changed while the manifest was being built — press Download again');
+    return;
   }
   // Copy rather than mutate ARC — otherwise a second download stacks the note again, and
   // the on-screen report starts disagreeing with the report it came from.
@@ -1705,6 +1845,13 @@ $('btnArcDl').addEventListener('click', async () => {
   const s = exState();
   download('MANIFEST.md', archiveManifest(res, hashes, new Date().toISOString().slice(0,16).replace('T',' ') + ' UTC', s.expiry || ''), 'text/markdown');
   toast('Manifest downloaded');
+});
+// Ticks are the only genuinely shared state here — the archive lives in one tab's memory,
+// the ticks are in localStorage. Unticking a manual item in one tab left the other tab's
+// gate open indefinitely, which is the wrong direction for a gate to go stale.
+window.addEventListener('storage', e => {
+  if (e.key && e.key !== EX_KEY && e.key !== CK_KEY) return;
+  renderExpiry(); renderRunbook(); renderGate(); renderChecks();
 });
 renderExpiry(); renderRunbook(); renderGate(); renderArchive();
 

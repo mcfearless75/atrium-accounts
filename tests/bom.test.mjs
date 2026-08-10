@@ -58,6 +58,54 @@ eq('parseNum "-4.80" accepted', X.parseNum('-4.80'), -4.8);
 eq('parseNum "(-5.00)" refused', X.parseNum('(-5.00)'), null);
 eq('parseNum blank -> null', X.parseNum('  '), null);
 
+/* ---- money mode: Sage's own export notations, matched to the two sibling parsers.
+   tests/migrate.test.mjs compares this function against them directly on a wide table;
+   these pin the behaviour from this side so a change here fails here too. ---- */
+eq('parseNum money "480.00-" is a rebate, not an unreadable cell', X.parseNum('480.00-', true), -480);
+eq('parseNum money "1250.00CR" is negative', X.parseNum('1250.00CR', true), -1250);
+eq('parseNum money "1250.00 DR" is positive', X.parseNum('1250.00 DR', true), 1250);
+eq('parseNum money "(1250.00-)" states its sign twice and is refused', X.parseNum('(1250.00-)', true), null);
+eq('parseNum money "1250 C R" is not a credit marker', X.parseNum('1250 C R', true), null);
+
+/* ---- non-money mode: CR and DR are crate and drum before they are credit and debit.
+   parseNum is called for quantities and scrap percentages, and reading "3 DR" as 3 throws
+   away the unit and fabricates a number the roll-up then presents as authoritative. ---- */
+eq('parseNum qty "3 DR" is unreadable, not 3', X.parseNum('3 DR'), null);
+eq('parseNum qty "2 CR" is unreadable, not -2', X.parseNum('2 CR'), null);
+eq('parseNum qty "480.00-" still reads as negative', X.parseNum('480.00-'), -480);
+eq('parseNum qty "(5)" still reads as negative', X.parseNum('(5)'), -5);
+eq('parseNum qty "3" is unaffected', X.parseNum('3'), 3);
+
+{
+  // End to end: the cell that regressed. A package-coded quantity must stop the roll-up,
+  // not complete it — an understated product cost that looks authoritative is the whole
+  // failure mode this app exists to prevent.
+  const csv = H + 'FG-OIL-KIT,RM-OIL,Lubricating oil,3 DR,Drum,10.00,Active,,\n' +
+                  'FG-OIL-KIT,RM-CAN,Pouring can,2,Each,4.00,Active,,\n';
+  const f = run(csv);
+  const titles = f.findings.map(x => x.title).join(' | ');
+  eq('a package-coded quantity does not become a number', f.lines[0].qty, null);
+  eq('and the assembly gets no roll-up rather than a fabricated one',
+     f.rolled.get('FG-OIL-KIT'), null);
+  ok('the unreadable quantity is reported', f.has('Unreadable or missing quantities'), titles);
+  ok('and no negative quantity is invented', !f.has('Negative quantities'), titles);
+}
+{
+  const csv = H + 'FG-A,RM-BOLT,Bolt,2 CR,Each,10.00,Active,,\n' +
+                  'FG-A,RM-NUT,Nut,4,Each,2.50,Active,,\n';
+  const f = run(csv);
+  const titles = f.findings.map(x => x.title).join(' | ');
+  ok('a crate quantity is unreadable, not a negative quantity',
+     f.has('Unreadable or missing quantities') && !f.has('Negative quantities'), titles);
+}
+{
+  // Scrap survived the regression only by luck — -10 falls outside 0-100 and tripped the
+  // unusable-scrap branch. Luck is not cover.
+  const csv = H + 'FG-B,RM-X,Part,1,Each,10.00,Active,10 CR,\n';
+  const p = X.parseBOM(csv);
+  eq('an unusable scrap percentage is null, not a sign-flipped number', p.lines[0].scrap, null);
+}
+
 /* ---- C1: negative cost visible and detected ---- */
 eq('fmtMoney keeps the minus sign', X.fmtMoney(-480), '-£480.00');
 eq('fmtMoney positive unchanged', X.fmtMoney(480), '£480.00');
