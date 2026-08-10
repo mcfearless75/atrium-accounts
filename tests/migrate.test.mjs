@@ -18,7 +18,9 @@ const pure = src.split('/* ================= DOM LAYER ================= */')[0]
 
 const exposed = ['normKey','parseCSV','parseMoney','mapHeaders','detectEntity','getRow',
   'convertParties','convertItems','convertNominal','rootTypeFor','accountCode',
-  'parseSide','reconcile','toCSV','ENT','REC_ALIASES','DEMO_FILES','REC_DEMO_A','REC_DEMO_B'];
+  'parseSide','reconcile','toCSV','ENT','REC_ALIASES','DEMO_FILES','REC_DEMO_A','REC_DEMO_B',
+  'parseDate','fmtDateUTC','EXPORT_SPECS','analyseArchiveFile','checkArchive','archiveManifest',
+  'DEMO_ARCHIVE_EXTRA'];
 const ctx = {};
 vm.createContext(ctx);
 // The slice ends mid-IIFE; close it after publishing the pure functions outward.
@@ -703,6 +705,248 @@ eq('an Excel thousands-formatted code normalises', X.accountCode('1,200'), '1200
   const r = conv(NOM_HDR + '\n,Retained earnings,,5000.00,\n', 'nominal', X.convertNominal);
   ok('an account lost for want of a code is blocking, not advisory',
      r.issues.some(i => i.sev === 'high' && /no account code/i.test(i.text)), issueText(r));
+}
+
+/* ---------- Phase 0: the export archive check ----------
+   This is the gate in front of the one irreversible step in the whole migration. Every
+   assertion below is a route by which an archive could have read as taken when it was not. */
+
+const TODAY = Date.UTC(2026, 7, 10);                       // pinned clock — 10/08/2026
+const CUST_OK = `Account Reference,Name,Address Line 1,Town,Postcode,Telephone,VAT Registration Number,Balance
+ACME01,Acme Lending Ltd,1 Fenwick Street,Liverpool,L2 7NA,0151 496 0101,GB123456789,5375.00
+`;
+const SUPP_OK = `Account Reference,Name,Address Line 1,Town,Postcode,Telephone,VAT Registration Number,Balance
+SUPP01,Northern Cloud Ltd,Data House,Manchester,M4 6DE,0161 496 0606,GB222333444,2159.00
+`;
+const ITEM_OK = `Stock Code,Description,Category,Sale Price,Cost Price,Quantity in Stock,Unit of Sale
+XR-LIC-01,Licence,Licences,5000.00,1500.00,12,Each
+`;
+const NOM_OK = `N/C,Name,Debit,Credit
+1200,Bank,18930.50,
+4000,Sales,,45200.00
+`;
+const auditCSV = rows => `Type,Account Ref,N/C,Date,Reference,Details,Net,Tax,T/C\n${rows}`;
+const AUDIT_LONG = auditCSV(
+  `SI,ACME01,4000,01/04/2023,INV-1,Opening trade,1000.00,200.00,T1
+SI,ACME01,4000,09/08/2026,INV-2,Recent,2400.00,480.00,T1
+`);
+const fullSet = extra => [
+  {name:'customers.csv', text:CUST_OK}, {name:'suppliers.csv', text:SUPP_OK},
+  {name:'products.csv', text:ITEM_OK}, {name:'nominal_tb.csv', text:NOM_OK},
+  {name:'audit_trail.csv', text:AUDIT_LONG}
+].concat(extra || []);
+const arcText = r => JSON.stringify({blocking:r.blocking, warnings:r.warnings});
+const itemOf = (r, key) => r.items.find(i => i.key === key);
+
+{
+  const r = X.checkArchive(fullSet(), TODAY);
+  eq('a full, clean CSV set reads as complete', r.verdict, 'complete');
+  eq('and nothing is blocking', r.blocking.length, 0);
+  // The verdict covers the five CSVs and nothing else. Reading it as "the archive is done"
+  // would skip the backup — the only artefact that is actually the legal record.
+  eq('the four unverifiable items are still named', r.manualPending.length, 4);
+  ok('and the report says outright what it could not see',
+     r.notes.some(n => /cannot confirm the Sage backup/.test(n)), JSON.stringify(r.notes));
+}
+{
+  // The false-clean guard: nothing examined must never be the same answer as nothing wrong.
+  const r = X.checkArchive([], TODAY);
+  eq('an empty archive is incomplete, not clean', r.verdict, 'incomplete');
+  eq('with one blocking line per missing export', r.blocking.length, 5);
+  ok('and it says it read nothing', r.notes.some(n => /No files given/.test(n)), JSON.stringify(r.notes));
+}
+{
+  const r = X.checkArchive(fullSet().filter(f => f.name !== 'audit_trail.csv'), TODAY);
+  eq('a missing export blocks', r.verdict, 'incomplete');
+  eq('and the slot is reported missing', itemOf(r, 'audit').status, 'missing');
+  ok('the audit trail is named as the one that cannot be recreated',
+     r.blocking.some(b => /cannot be recreated from anything else/.test(b)), arcText(r));
+}
+{
+  const set = fullSet().map(f => f.name === 'customers.csv'
+    ? {name:'customers.csv', text:'Account Reference,Name,Town,Postcode\n'} : f);
+  const r = X.checkArchive(set, TODAY);
+  // Sage will happily export a filtered view. The file parses, matches, and holds nobody.
+  ok('an export with a header row and no data blocks',
+     r.blocking.some(b => /header row and no data/.test(b)), arcText(r));
+}
+{
+  const set = fullSet().map(f => f.name === 'customers.csv'
+    ? {name:'customers.csv', text:'Address Line 1,Town,Postcode\n1 Fenwick Street,Liverpool,L2 7NA\n'} : f);
+  const r = X.checkArchive(set, TODAY);
+  // Losing the name column stops the file being recognisable as a customer export at all,
+  // so the slot stays empty and blocks. It is still an export that has to be re-run, and it
+  // cannot be re-run once the licence lapses.
+  eq('an export missing a column detection needs does not fill its slot', itemOf(r, 'customers').status, 'missing');
+  eq('and the archive is incomplete', r.verdict, 'incomplete');
+}
+{
+  // Reachable where the `must` check was not: this file detects as the nominal export
+  // perfectly, and carries none of the figures the opening position is built from. Mutation
+  // testing found the original guard here could never fire — this is what replaced it.
+  const listOnly = 'N/C,Name\n1200,Bank\n4000,Sales\n';
+  const r = X.checkArchive(fullSet().map(f => f.name === 'nominal_tb.csv' ? {name:'nominal_tb.csv', text:listOnly} : f), TODAY);
+  eq('the nominal account list is still recognised as the nominal export',
+     X.analyseArchiveFile('nominal_tb.csv', listOnly, TODAY).specKey, 'nominal');
+  ok('but an export with no balance column at all blocks',
+     r.blocking.some(b => /none of the debit \/ credit \/ balance columns are here/.test(b)), arcText(r));
+  eq('and the slot does not read as taken', itemOf(r, 'nominal').status, 'issues');
+  eq('so the archive is incomplete', r.verdict, 'incomplete');
+}
+{
+  const set = fullSet().map(f => f.name === 'products.csv'
+    ? {name:'products.csv', text:'Stock Code,Description\nXR-LIC-01,Licence\n'} : f);
+  const r = X.checkArchive(set, TODAY);
+  eq('a reduced field list still fills the slot when the key columns survive', itemOf(r, 'items').status, 'ok');
+  ok('but the dropped fields are reported while they can still be re-exported',
+     r.warnings.some(w => /no sale price, cost price, quantity in stock, unit of sale/.test(w)), arcText(r));
+}
+{
+  const headerless = {name:'nominal_no_headers.csv', text:'1200,Bank,18930.50,\n4000,Sales,,45200.00\n'};
+  const a = X.analyseArchiveFile(headerless.name, headerless.text, TODAY);
+  eq('a file exported without its header row matches nothing', a.specKey, null);
+  ok('and is told why, because it parses perfectly and looks like the wrong file',
+     /include header row/.test(a.reason), a.reason);
+  const r = X.checkArchive(fullSet([headerless]), TODAY);
+  ok('an unrecognised file is reported rather than ignored',
+     r.warnings.some(w => /nominal_no_headers\.csv/.test(w) && /has not been checked/.test(w)), arcText(r));
+}
+{
+  // A Sage audit trail carries an Account column, which is a `nominal` alias. Classified as
+  // a trial balance it fills the wrong slot, its date coverage is never looked at, and the
+  // real trial balance then reads as a duplicate.
+  const a = X.analyseArchiveFile('audit_trail.csv', AUDIT_LONG, TODAY);
+  eq('an audit trail is recognised as an audit trail, not a trial balance', a.specKey, 'audit');
+  const b = X.analyseArchiveFile('nominal_tb.csv', NOM_OK, TODAY);
+  eq('and a trial balance is still a trial balance', b.specKey, 'nominal');
+}
+{
+  const short = auditCSV(
+    `SI,ACME01,4000,02/06/2026,INV-1,May,2400.00,480.00,T1
+SI,BLUE02,4000,09/07/2026,INV-2,June,5000.00,1000.00,T1
+`);
+  const r = X.checkArchive(fullSet().map(f => f.name === 'audit_trail.csv' ? {name:'audit_trail.csv', text:short} : f), TODAY);
+  // The export dialog offers a default date range and it is not "everything". A 37-day
+  // audit trail labelled "the history" is the quietest way to lose fifteen years of it.
+  ok('an audit trail covering under a year is challenged',
+     r.warnings.some(w => /covers 37 days/.test(w) && /slice of the history/.test(w)), arcText(r));
+  ok('the challenge is a warning, not a block — some companies really are that young',
+     r.verdict === 'complete', arcText(r));
+  ok('and a stale end date is measured against the injected clock, not the wall clock',
+     r.warnings.some(w => /most recent transaction is 09\/07\/2026, 32 days ago/.test(w)), arcText(r));
+}
+{
+  const nodates = auditCSV(`SI,ACME01,4000,not a date,INV-1,May,2400.00,480.00,T1\n`);
+  const r = X.checkArchive(fullSet().map(f => f.name === 'audit_trail.csv' ? {name:'audit_trail.csv', text:nodates} : f), TODAY);
+  ok('an audit trail with no readable date at all blocks',
+     r.blocking.some(b => /not one date in this file could be read/.test(b)), arcText(r));
+}
+{
+  const mixed = auditCSV(
+    `SI,ACME01,4000,01/04/2023,INV-1,Old,1000.00,200.00,T1
+SI,ACME01,4000,31/02/2026,INV-2,Impossible,1000.00,200.00,T1
+SI,ACME01,4000,09/08/2026,INV-3,New,2400.00,480.00,T1
+`);
+  const a = X.analyseArchiveFile('audit_trail.csv', mixed, TODAY);
+  // Coverage is disclosed wherever a range is printed: a range derived from two rows of
+  // three, presented as the range, is the same defect as a total that omits rows.
+  eq('the range is taken only from the dates that parsed', a.stats.dated, 2);
+  eq('and the unreadable one is counted, not dropped', a.stats.undated, 1);
+  ok('31/02 does not roll into March and stretch the range',
+     X.fmtDateUTC(a.stats.last) === '09/08/2026', X.fmtDateUTC(a.stats.last));
+  ok('the gap between the range and the row count is stated',
+     a.issues.some(i => /1 of 3 rows carry a date this tool cannot read/.test(i.text)),
+     JSON.stringify(a.issues));
+}
+{
+  // "ledger.csv" holding party records could be either book. detectEntity refuses to guess;
+  // the archive has to carry that refusal forward, because after Sage has gone nobody can
+  // answer "which of these two is the creditors ledger" from the file itself.
+  const r = X.checkArchive(fullSet([{name:'ledger.csv', text:CUST_OK}]), TODAY);
+  ok('a party export that could be either book is flagged in the archive',
+     r.warnings.some(w => /ledger\.csv/.test(w) && /could equally be the/.test(w) && /Rename the file/.test(w)), arcText(r));
+}
+{
+  const two = X.checkArchive(fullSet([{name:'audit_trail_2.csv', text:AUDIT_LONG}]), TODAY);
+  const md = X.archiveManifest(two, {}, 'now', '');
+  // One coverage line for two files describes one of them while appearing to describe both.
+  eq('coverage is reported once per audit file, not once per slot',
+     (md.match(/dates read from 2 of 2 rows/g) || []).length, 2);
+}
+{
+  const r = X.checkArchive(fullSet([{name:'customers_old.csv', text:CUST_OK}]), TODAY);
+  ok('two files claiming one slot are both named',
+     r.warnings.some(w => /2 files look like this export/.test(w) &&
+                          /customers\.csv/.test(w) && /customers_old\.csv/.test(w)), arcText(r));
+  eq('and both are carried into the manifest rather than the newest silently winning',
+     itemOf(r, 'customers').files.length, 2);
+}
+{
+  const misaligned = `Account Reference,Name,Address Line 1,Town,Postcode,Telephone,VAT Registration Number,Balance
+ACME01,Acme Lending, Ltd,1 Fenwick Street,Liverpool,L2 7NA,0151 496 0101,GB123456789,5375.00
+`;
+  const r = X.checkArchive(fullSet().map(f => f.name === 'customers.csv' ? {name:'customers.csv', text:misaligned} : f), TODAY);
+  ok('a row of the wrong width blocks here too, not only in the converters',
+     r.blocking.some(b => /different number of columns/.test(b)), arcText(r));
+}
+{
+  const r = X.checkArchive(fullSet(), TODAY);
+  const md = X.archiveManifest(r, {'customers.csv':'abc123'}, '2026-08-10 09:00 UTC', '2026-09-21');
+  ok('the manifest stamps the licence end date', /Sage licence ends: 2026-09-21/.test(md), md.slice(0,200));
+  ok('a file with a checksum carries it', /abc123/.test(md));
+  ok('a file without one says so rather than leaving a blank cell', /not computed/.test(md));
+  ok('the four hand-ticked items appear as unverified', /Ticked by hand, not verified by this tool/.test(md));
+  ok('and the audit trail coverage is recorded for the archive',
+     /audit_trail\.csv: 01\/04\/2023 to 09\/08\/2026 \(1226 days\), dates read from 2 of 2 rows/.test(md), md);
+  const md2 = X.archiveManifest(X.checkArchive([], TODAY), {}, 'now', '');
+  ok('an incomplete archive says so at the top of its own manifest',
+     /INCOMPLETE — do not let the licence lapse/.test(md2), md2.slice(0,300));
+  ok('and every missing export is a MISSING row', (md2.match(/MISSING/g) || []).length === 5, md2);
+}
+{
+  // The demo has to exercise the guards rather than pass them by luck.
+  const files = [];
+  for (const n in X.DEMO_FILES) if (n !== 'products.csv') files.push({name:n, text:X.DEMO_FILES[n]});
+  for (const n in X.DEMO_ARCHIVE_EXTRA) files.push({name:n, text:X.DEMO_ARCHIVE_EXTRA[n]});
+  const r = X.checkArchive(files, TODAY);
+  eq('the demo archive is incomplete', r.verdict, 'incomplete');
+  eq('with the missing products export blocking', itemOf(r, 'items').status, 'missing');
+  ok('and it fires the truncated-audit-trail guard', r.warnings.some(w => /slice of the history/.test(w)), arcText(r));
+  ok('the duplicate-slot guard', r.warnings.some(w => /2 files look like this export/.test(w)), arcText(r));
+  ok('the missing-header-row guard', r.warnings.some(w => /include header row/.test(w)), arcText(r));
+  ok('and the unreadable-date disclosure', r.warnings.some(w => /rows carry a date this tool cannot read/.test(w)), arcText(r));
+}
+
+/* ---------- sibling parity ----------
+   The rule this project keeps relearning: a fix that lands in one app and not its twin
+   produces a confident wrong number. These load the siblings and compare them directly,
+   so drift fails the build rather than waiting for an audit to notice. */
+
+function pureOf(file, expose){
+  const h = fs.readFileSync(path.join(root, file), 'utf8');
+  const s = [...h.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(m => m[1]).sort((a, b) => b.length - a.length)[0];
+  const c = {};
+  vm.createContext(c);
+  vm.runInContext(s.split('/* ================= DOM LAYER ================= */')[0] +
+    '\n;globalThis.__X = {' + expose.join(',') + '};\n})();', c);
+  return c.__X;
+}
+const SAGE = pureOf('sage.html', ['parseMoney','parseDate']);
+const BOM = pureOf('bom.html', ['parseNum']);
+
+const MONEY_CASES = ['1,250.00','(1,250.00)','1250.00-','1250.00CR','1250.00 DR','(-5.00)','9,50',
+  '8odd','12abc','','   ','£1,250.00','-1250','1,2500.00','.5','5.','Infinity','1 250.00','(0.00)'];
+for (const c of MONEY_CASES)
+  eq('parseMoney agrees with sage.html on ' + JSON.stringify(c), X.parseMoney(c), SAGE.parseMoney(c));
+for (const c of MONEY_CASES)
+  eq('parseMoney agrees with bom.html parseNum on ' + JSON.stringify(c), X.parseMoney(c), BOM.parseNum(c));
+
+const DATE_CASES = ['31/03/2026','31/02/2026','2026-03-31','2026-02-31','01/06/98','01/06/71','01/06/70',
+  '1/6/2026','31.03.2026','2026-03-31T09:00:00','13/13/2026','','not a date','00/01/2026'];
+for (const c of DATE_CASES){
+  const a = X.parseDate(c), b = SAGE.parseDate(c);
+  eq('parseDate agrees with sage.html on ' + JSON.stringify(c),
+     a === null ? null : a.toISOString(), b === null ? null : b.toISOString());
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

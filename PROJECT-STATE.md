@@ -23,6 +23,12 @@ parallel run is **not possible** in the window. Consequences and required action
    data becomes very hard to get out. Run and archive full exports (customers,
    suppliers, products, nominal/TB, full audit trail, VAT returns filed to date) this
    week regardless of which migration path is chosen. Non-negotiable, do it first.
+   **Tooling for this now exists**: `migrate.html` tab 0 ("Get the data out") is a
+   step-by-step runbook for all nine artefacts plus an archive checker — drop the
+   exported folder in and it reports what is missing, what was exported with a reduced
+   field list, what was exported without a header row, and how much of the history the
+   audit trail actually covers. It emits a MANIFEST.md (row counts, columns, date
+   ranges, SHA-256) to file with the archive for the six-year retention.
 2. **Establish whether it expires or auto-renews, and the notice deadline.** Many Sage
    contracts auto-renew unless cancelled with ~30 days' notice — with 6 weeks left, the
    notice deadline may be days away. Missing it can lock in another full year.
@@ -91,10 +97,21 @@ session scoped to the old name still work via GitHub's API redirect — pass `re
 if `atrium-accounts` is refused. Live URLs are now
 `mcfearless75.github.io/atrium-accounts/{index,sage,migrate,bom}.html`.
 
-## In flight / next steps
+- `help.html` — task-first "how do I…?" guide for the people who just do the invoicing.
+  Merged in PR #10.
+- **Phase 0 export runbook** — `migrate.html` gains a first tab, "Get the data out": the
+  nine-artefact runbook, an archive completeness checker, a MANIFEST.md emitter, and a
+  hard gate that also renders at the top of the cutover checklist. The gate opens only
+  when the five CSV exports verify clean *and* the four things no CSV check can see are
+  confirmed by hand. Suite grew 196 → 298 assertions, mutation-tested 21/21; one of the
+  new assertions turned out to cover nothing (it tested a guard that was unreachable) and
+  was replaced. The suite now also compares `parseMoney` / `parseNum` / `parseDate`
+  across all three apps, which **immediately found live drift**: `bom.html`'s `parseNum`
+  had never learned Sage's trailing-minus and `CR`/`DR` notations, so a `480.00-` rebate
+  was a negative cost in two apps and an unreadable cell in the third. Fixed. The sibling
+  rule is now enforced by the build rather than by memory.
 
-- **Merge PR #10** (help.html). Nothing blocking it — no CI on this repo beyond the Pages
-  deploy on `main`.
+## In flight / next steps
 - **Walk help.html against the client's real ERPNext instance once it exists.** The steps
   deliberately say what to *search for* rather than which menu to click, because sidebar
   wording drifts between versions — but they should still be checked against real screens
@@ -103,9 +120,14 @@ if `atrium-accounts` is refused. Live URLs are now
   route we set up for you at cutover" and tells the user not to do the first quarter alone,
   because the MTD filing path is not settled. Fill that in once it is.
 
-- PR #6 open (draft): the Atrium shell plus the BOM costing fixes.
+- **The tooling is now ahead of the client conversation, and that is the wrong way round.**
+  Tab 0 exists, is tested and is live; nobody has yet run a single real export through it.
+  The three unresolved questions are all answers only the client or Sage can give:
+  does the contract auto-renew and has the notice deadline passed · is the year-end
+  accountant bought in (they hold the veto) · which MTD filing route. None of them are
+  engineering work.
 - All four accounting-side jobs are done: every app has a committed suite
-  (81 / 116 / 196) and every app has been adversarially audited. `json.html` has neither,
+  (81 / 116 / 298) and every app has been adversarially audited. `json.html` has neither,
   and is the lowest-stakes of the four (payload QA, not client accounting data).
 - **Verify the ERPNext import column headers against the client's live v15 instance**
   before any bulk import. Everything else is now pinned by tests; this is the one

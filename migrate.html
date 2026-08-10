@@ -101,6 +101,37 @@ table.data tr.bad td.num{color:var(--high)}
 .phaseH{font-size:13px;font-weight:700;color:var(--accent);margin:18px 0 4px;letter-spacing:.4px;text-transform:uppercase}
 .phaseH:first-child{margin-top:0}
 
+input[type=date]{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:5px 8px;font-family:var(--sans);font-size:13px}
+input[type=date]::-webkit-calendar-picker-indicator{filter:invert(.7)}
+
+.gate{border-radius:var(--radius);padding:12px 14px;margin-bottom:14px;font-size:13px;line-height:1.6;border:1px solid var(--high);background:var(--high-soft)}
+.gate.open{border-color:var(--info);background:var(--info-soft)}
+.gate b{display:block;font-size:13.5px;margin-bottom:4px;color:var(--high)}
+.gate.open b{color:var(--info)}
+.gate ul{margin:6px 0 0 18px;color:var(--text-dim)}
+.gate li{margin:2px 0}
+
+.rb{background:var(--bg-raise);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden}
+.rb.blocked{border-left:3px solid var(--high)}
+.rb.good{border-left:3px solid var(--info)}
+.rb.pending{border-left:3px solid var(--med)}
+.rb > summary{padding:11px 14px;cursor:pointer;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13.5px;font-weight:600;list-style:none}
+.rb > summary::-webkit-details-marker{display:none}
+.rb > summary::before{content:'▸';color:var(--text-faint);font-weight:400}
+.rb[open] > summary::before{content:'▾'}
+.rb > summary:hover{background:var(--bg-raise2)}
+.rb .pill{font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:2px 8px;border-radius:10px;margin-left:auto;white-space:nowrap}
+.rb .pill.ok{background:var(--info-soft);color:var(--info)}
+.rb .pill.bad{background:var(--high-soft);color:var(--high)}
+.rb .pill.warn{background:var(--med-soft);color:var(--med)}
+.rb .pill.idle{background:var(--bg-raise2);color:var(--text-dim)}
+.rb .body{padding:0 14px 12px 14px;font-size:13px;line-height:1.65;color:var(--text-dim)}
+.rb .body h5{font-size:11px;letter-spacing:.5px;text-transform:uppercase;color:var(--text-faint);margin:10px 0 3px}
+.rb .body ul{margin-left:18px}
+.rb .body li{margin:3px 0}
+.rb .body .where{font-family:var(--mono);font-size:12px;color:var(--text);background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 9px;display:block}
+.rb .manualTick{display:flex;gap:9px;align-items:flex-start;margin-top:10px;font-size:13px;color:var(--text)}
+
 #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--bg-raise2);border:1px solid var(--accent);color:var(--text);border-radius:20px;padding:7px 18px;font-size:13px;z-index:80;opacity:0;transition:opacity .2s;pointer-events:none}
 #toast.show{opacity:1}
 @media (prefers-reduced-motion:reduce){#toast{transition:none}}
@@ -139,13 +170,49 @@ table.data tr.bad td.num{color:var(--high)}
 </header>
 
 <nav id="tabs">
-  <button data-tab="convert" class="active">1 · Convert exports</button>
+  <button data-tab="export" class="active">0 · Get the data out</button>
+  <button data-tab="convert">1 · Convert exports</button>
   <button data-tab="reconcile">2 · Reconcile parallel run</button>
   <button data-tab="checklist">3 · Cutover checklist</button>
 </nav>
 
 <main>
-  <div class="tabBody active" id="tab-convert">
+  <div class="tabBody active" id="tab-export">
+    <p class="lead"><b>Everything else on this site is quality assurance over data you can still retrieve. This page is the part that stops being possible.</b> When the Sage licence ends the software can go read-only or stop opening altogether, and a ledger you cannot open is a ledger you cannot export. Run these while it is live — before deciding anything about the migration, and regardless of which way that decision goes.</p>
+
+    <div class="card" id="expiryCard">
+      <h3>Licence deadline</h3>
+      <div class="btnRow">
+        <label for="expiryIn" style="font-size:13px;color:var(--text-dim)">Sage licence ends</label>
+        <input type="date" id="expiryIn">
+        <span id="expiryOut" style="font-size:13px"></span>
+      </div>
+      <p class="rowsNote">Kept in this browser only, alongside the ticks below. Confirm the date against the contract rather than the renewal email — and confirm whether it <b>expires or auto-renews</b>, because the notice deadline for cancelling usually falls well before the end date.</p>
+    </div>
+
+    <div id="gateTop"></div>
+
+    <h3 style="font-size:13px;margin:18px 0 8px;color:var(--accent);text-transform:uppercase;letter-spacing:.4px">The runbook</h3>
+    <div id="runbook"></div>
+
+    <div class="card">
+      <h3>Check the archive</h3>
+      <p class="lead" style="margin-bottom:10px">Drop the whole folder of exported CSVs here. Each file is matched to its slot in the runbook and checked for the things that make an export useless later: no data, a reduced field list, a header row left off, rows that do not line up, and — for the audit trail — how much of the history it actually covers. Nothing is uploaded and nothing is kept.</p>
+      <div class="dz" id="dzX">Drag &amp; drop your exported CSVs here — or use the button below</div>
+      <div class="btnRow">
+        <button id="btnArcAdd" class="primary">Add exported file(s)</button>
+        <button id="btnArcDemo">Demo archive</button>
+        <button id="btnArcClear">Clear</button>
+        <button id="btnArcDl" disabled>Download MANIFEST.md</button>
+        <span id="arcInfo" style="font-size:12px;color:var(--text-dim)"></span>
+      </div>
+      <div id="arcOut"></div>
+    </div>
+
+    <p class="privacy">The manifest records filenames, row counts, column names, date ranges and checksums — metadata about the archive, never a value out of the ledger. File contents stay in this tab and are dropped when you clear or close it.</p>
+  </div>
+
+  <div class="tabBody" id="tab-convert">
     <p class="lead"><b>Drop your Sage 50 exports here</b> (Customers, Suppliers, Products, Nominal codes / Trial Balance — run them from Sage via File → Export or the report CSV buttons). Each file is auto-detected, profiled for defects, and converted into <b>ERPNext-ready import CSVs</b>. Column layouts target the ERPNext v15 Data Import templates and should be verified against your live instance during Phase 0 — every generated file says what it maps to.</p>
     <div class="dz" id="dz">Drag &amp; drop CSV export files anywhere on this window — or use “Add export file(s)”, or paste below</div>
     <textarea id="paste" rows="5" spellcheck="false" placeholder="…or paste one export's CSV here (header row required)"></textarea>
@@ -171,6 +238,7 @@ table.data tr.bad td.num{color:var(--high)}
 
   <div class="tabBody" id="tab-checklist">
     <p class="lead"><b>Cutover readiness.</b> The gate list from the migration plan — cutover happens when every box is ticked. Ticks are kept in this browser only (no client data involved).</p>
+    <div id="gateCk"></div>
     <div id="checks"></div>
     <div class="btnRow"><button id="btnCkReset">Reset ticks</button><button id="btnCkDl">Download checklist .md</button></div>
   </div>
@@ -178,6 +246,7 @@ table.data tr.bad td.num{color:var(--high)}
 
 <div id="toast" role="status"></div>
 <input type="file" id="fileInput" accept=".csv,.txt" multiple style="display:none">
+<input type="file" id="arcInput" accept=".csv,.txt" multiple style="display:none">
 
 <script>
 (function(){
@@ -755,6 +824,321 @@ function reconcile(textA, textB){
           stats:{matched, deltas, onlyA, onlyB, rowsA:A.rowCount, rowsB:B.rowCount}};
 }
 
+/* ---------- Phase 0: getting the data out of Sage while the licence is live ---------- */
+
+// Behaviourally identical to sage.html's parseDate, for exactly the reason parseMoney is
+// kept identical to its two siblings: the same audit trail is dated here and in the ledger
+// workbench, and two date parsers that disagree put one posting in two VAT quarters.
+// tests/migrate.test.mjs asserts the two still agree on every awkward input.
+function parseDate(s){
+  if (s == null) return null;
+  s = String(s).trim();
+  if (!s) return null;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/);          // ISO, with or without a time
+  if (m) return mk(+m[1], +m[2], +m[3]);
+  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})(?:[T ].*)?$/); // UK dd/mm/yyyy, with or without a time
+  if (m){
+    let y = +m[3];
+    if (y < 100) y += (y > 70 ? 1900 : 2000);
+    return mk(y, +m[2], +m[1]);
+  }
+  return null;
+  function mk(y,mo,d){
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    const dt = new Date(Date.UTC(y, mo-1, d));
+    if (isNaN(dt)) return null;
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo-1 || dt.getUTCDate() !== d) return null;
+    return dt;
+  }
+}
+
+function fmtDateUTC(ms){
+  if (ms == null) return '—';
+  const d = new Date(ms);
+  const p = n => String(n).padStart(2,'0');
+  return p(d.getUTCDate()) + '/' + p(d.getUTCMonth()+1) + '/' + d.getUTCFullYear();
+}
+
+// The audit trail is not one of the convertible entities — this app does not import it and
+// sage.html audits it — but it is the one file that genuinely cannot be recreated, so the
+// archive check has to recognise and measure it. Tested BEFORE detectEntity: a Sage audit
+// trail carries an Account column, which is a `nominal` alias, so it would otherwise be
+// classified as a trial balance and its date coverage never looked at.
+const AUDIT_ALIASES = {
+  type:['type','transactiontype','tp','trantype'],
+  account:['accountref','account','accountreference','ac'],
+  nominal:['nc','nominalcode','nominal','ncode'],
+  date:['date','transactiondate','postingdate','trandate','transdate'],
+  ref:['reference','ref','invoiceref','invoiceno'],
+  details:['details','description','narrative'],
+  net:['net','netamount','goods','amount','value'],
+  tax:['tax','vat','taxamount','vatamount'],
+  tc:['tc','taxcode','vatcode','taxcodeused']
+};
+
+// The Phase 0 runbook. `must` columns block — an export run with a reduced field list is a
+// file you cannot re-run once the licence lapses. `kind:'manual'` items are the ones no
+// CSV check can speak to; they are named here so the gate cannot quietly omit them.
+const EXPORT_SPECS = [
+  { key:'customers', label:'Customer records', kind:'csv',
+    must:{ref:'account reference', name:'name'},
+    want:{postcode:'postcode', vatno:'VAT registration number', phone:'telephone', balance:'balance'},
+    why:'Names, addresses, VAT numbers and account references for everyone you have ever invoiced. Nothing else in the archive rebuilds this — the audit trail holds the account reference, not the address behind it.',
+    where:'Customers module → select every record → the export / CSV action on the module toolbar. Older versions put it under File → Export.',
+    settings:[
+      'Include inactive, dormant and on-hold accounts, not just this year’s traders.',
+      'Take every field the export offers rather than the default subset: address lines 1–5, contact, telephone, email, VAT registration number, credit limit, balance.',
+      'Tick “include header row”. Without it the file is unreadable to everything downstream, including this tool.',
+      'Keep the word “customer” in the filename — customer and supplier exports have identical columns, and the filename is what tells them apart.'
+    ] },
+  { key:'suppliers', label:'Supplier records', kind:'csv',
+    must:{ref:'account reference', name:'name'},
+    want:{postcode:'postcode', vatno:'VAT registration number', phone:'telephone', balance:'balance'},
+    why:'The same again for everyone who invoices you. Supplier VAT numbers in particular are needed to reclaim input VAT and are tedious to collect a second time.',
+    where:'Suppliers module → select every record → the export / CSV action. Same dialog as customers.',
+    settings:[
+      'Include inactive and on-hold accounts.',
+      'Every field, not the default subset.',
+      'Keep the word “supplier” in the filename.'
+    ] },
+  { key:'items', label:'Products / stock items', kind:'csv',
+    must:{code:'stock code', desc:'description'},
+    want:{salePrice:'sale price', costPrice:'cost price', qty:'quantity in stock', uom:'unit of sale'},
+    why:'Codes, descriptions, prices and stock levels. Cost price is the one people forget, and it is what every margin and BOM roll-up afterwards is built on.',
+    where:'Products module → select every record → the export / CSV action.',
+    settings:[
+      'Include discontinued and zero-stock items — historic invoices reference them.',
+      'Take cost price and quantity in stock as well as sale price.'
+    ] },
+  { key:'nominal', label:'Nominal list and trial balance', kind:'csv',
+    must:{code:'nominal code'},
+    needOne:{debit:'debit', credit:'credit', balance:'balance'},
+    needOneNote:'this is the nominal account list, not the trial balance. The list of codes is useful; the balances on them are what become ERPNext’s opening position, and they come from the Trial Balance report rather than the Nominal Codes module.',
+    want:{name:'account name'},
+    why:'The chart of accounts, and the balances that become ERPNext’s opening position. Get this wrong and every report afterwards is wrong in a way that reconciles.',
+    where:'Nominal codes module for the account list; Financials → Trial Balance for the balances, then the report’s export / CSV button.',
+    settings:[
+      'Run the trial balance twice: at the last completed year end, and again at the planned cutover date.',
+      'Include nominal codes with a nil balance — they are still part of the chart.',
+      'Note anything sitting in 9000–9999. Suspense balances are resolved before migration, not carried across.'
+    ] },
+  { key:'audit', label:'Full audit trail', kind:'csv', irreversible:true,
+    must:{date:'date', net:'net amount'},
+    want:{type:'transaction type', nominal:'nominal code', ref:'reference', tax:'tax amount', tc:'tax code'},
+    why:'Every transaction Sage has ever posted. This is the file that cannot be recreated from anything else, the file HMRC means by “records”, and the file the whole parallel run is reconciled against. If only one thing comes out before the licence lapses, it is this.',
+    where:'Financials module → Audit Trail → the detailed / transactional layout → export to CSV.',
+    settings:[
+      'Set the date range from the very first transaction to today. The dialog offers a narrower default, and accepting it is the single most common way an “everything” export turns out to be a slice — this tool checks the span for exactly that reason.',
+      'Choose the detailed layout, not a summary: one row per posting, with type, nominal, date, reference, details, net, tax and tax code.',
+      'Include deleted and reversed transactions if the dialog offers them. A corrections history is part of the record.',
+      'Re-run it once more on cutover day so the last few weeks of postings are not stranded.'
+    ] },
+  { key:'backup', label:'Full Sage data backup', kind:'manual',
+    why:'CSVs are readable but they are not the legal record, and they do not hold everything Sage knows. The backup is the artefact that satisfies six-year retention intact rather than as a re-typed summary.',
+    where:'File → Backup, with company data and all data files selected.',
+    settings:[
+      'Write it somewhere that is not the Sage machine, and take a second copy.',
+      'Note the Sage version number alongside it. A backup nobody can identify a reader for is not a backup.',
+      'Do this before anything else on this page. It is the only step that captures what the exports miss.'
+    ] },
+  { key:'vat', label:'Every VAT return already filed', kind:'manual',
+    why:'HMRC expects six years of filed returns and the detail behind them. ERPNext will not have them, and Sage will not be there to reprint them.',
+    where:'Financials → VAT, then the archive of reconciled/filed returns.',
+    settings:[
+      'Save each filed return with its supporting transaction detail, not just the nine boxes.',
+      'Include the current unfiled period as it stands, so the final return can be assembled from either system.'
+    ] },
+  { key:'openitems', label:'Open items at cutover — aged debtors and creditors', kind:'manual',
+    why:'The trial balance gives the control totals; ERPNext needs the individual unpaid invoices behind them. Without that, the first customer payment that arrives cannot be allocated to anything.',
+    where:'Customers → Aged Debtors and Suppliers → Aged Creditors, detailed, as at the cutover date.',
+    settings:[
+      'Detailed, one line per outstanding invoice — not the summary by account.',
+      'The total must agree with the debtors and creditors control accounts on the same day’s trial balance.'
+    ] },
+  { key:'documents', label:'Sample documents and layouts', kind:'manual',
+    why:'“Make it look like the old one” needs an old one. These are what the ERPNext print formats get rebuilt against.',
+    where:'Print or preview one of each and save as PDF.',
+    settings:['One sales invoice, one credit note, one statement, one remittance advice.'] }
+];
+
+function specFor(key){ return EXPORT_SPECS.find(s => s.key === key) || null; }
+
+function analyseArchiveFile(name, text, todayMs){
+  name = String(name == null ? 'unnamed file' : name);
+  const issues = [];
+  const push = (sev, t) => issues.push({sev, text:t});
+  const rows = parseCSV(String(text == null ? '' : text));
+  if (!rows.length)
+    return {name, specKey:null, headers:[], rowCount:0, issues, stats:null, reason:'the file is empty'};
+  const headers = rows[0];
+  const data = rows.slice(1);
+
+  const auditMap = mapHeaders(headers, AUDIT_ALIASES);
+  const isAudit = ('date' in auditMap) && ('net' in auditMap) && (('type' in auditMap) || ('nominal' in auditMap));
+  let specKey = null, map = null;
+  if (isAudit){ specKey = 'audit'; map = auditMap; }
+  else {
+    const det = detectEntity(headers, name);
+    if (det){
+      specKey = det.key; map = det.map;
+      // detectEntity already refuses to guess between customers and suppliers when nothing
+      // separates them. In an archive that matters more than at conversion time: this is
+      // the copy being kept, and "which of these two is the creditors ledger" is not a
+      // question anyone can answer from the file after Sage has gone.
+      if (det.ambiguousWith)
+        push('med', 'this could equally be the ' + (ENT[det.ambiguousWith] || {}).label +
+          ' export — the columns are identical and the filename gives no clue. It has been counted as ' +
+          (ENT[specKey] || {}).label + '. Rename the file so the archive is unambiguous.');
+    }
+  }
+  if (!specKey){
+    // Sage's export dialog has an "include header row" tick, and it can be left off. The
+    // file then parses perfectly and matches nothing, which reads as "wrong file" when it
+    // is actually the right file exported unusably.
+    const dataish = headers.filter(c => parseMoney(c) !== null || parseDate(c) !== null).length;
+    return {name, specKey:null, headers, rowCount:data.length, issues, stats:null,
+      reason: dataish >= 2
+        ? 'its first row looks like data rather than column names, so re-run the export with “include header row” ticked'
+        : 'no Sage export column set matched its headers'};
+  }
+
+  const spec = specFor(specKey);
+  if (!data.length) push('high', 'a header row and no data — the export ran but selected no records');
+  checkWidth(data, headers.length, push);
+
+  // The columns in `must` are the ones detection itself requires, so a file that reached
+  // here already has them — a check on them would be unreachable, and cover that cannot
+  // fire is worse than no cover. The check worth making is the one detection does not:
+  // a nominal export carrying no balance column at all is the account list rather than the
+  // trial balance. It detects perfectly and holds none of the figures the opening position
+  // is built from.
+  if (spec.needOne && !Object.keys(spec.needOne).some(f => f in map))
+    push('high', 'none of the ' + Object.values(spec.needOne).join(' / ') + ' columns are here — ' + spec.needOneNote);
+  const missingWant = Object.keys(spec.want || {}).filter(f => !(f in map));
+  if (missingWant.length)
+    push('med', 'no ' + missingWant.map(f => spec.want[f]).join(', ') + ' column' +
+      (missingWant.length > 1 ? 's' : '') + '. Not fatal, but re-running with every field selected costs nothing today and is impossible later.');
+
+  let stats = {rows:data.length};
+  if (specKey === 'audit'){
+    let min = null, max = null, dated = 0, undated = 0;
+    for (const r of data){
+      const d = parseDate(r[map.date]);
+      if (!d){ undated++; continue; }
+      dated++;
+      const t = d.getTime();
+      if (min === null || t < min) min = t;
+      if (max === null || t > max) max = t;
+    }
+    stats = {rows:data.length, dated, undated, first:min, last:max,
+      spanDays: (min !== null && max !== null) ? Math.round((max - min) / 86400000) : null};
+    if (!dated){
+      push('high', 'not one date in this file could be read, so there is no way to tell what period it covers — and the period it covers is the whole point of it.');
+    } else {
+      // Coverage is stated whenever a range is printed. A range derived from 60% of the
+      // rows, presented as the range, is the same defect as a total that omits rows.
+      if (undated) push('med', undated + ' of ' + data.length + ' rows carry a date this tool cannot read; the period reported for this file is taken from the other ' + dated + '.');
+      if (stats.spanDays !== null && stats.spanDays < 365)
+        push('med', 'covers ' + stats.spanDays + ' days (' + fmtDateUTC(min) + ' to ' + fmtDateUTC(max) +
+          '). The audit trail export defaults to a date range — unless the company genuinely has not traded longer than that, this is a slice of the history rather than the history. Re-run it from the earliest transaction.');
+      if (todayMs != null && max !== null){
+        const age = Math.round((todayMs - max) / 86400000);
+        if (age > 7) push('med', 'the most recent transaction is ' + fmtDateUTC(max) + ', ' + age +
+          ' days ago. Re-run this export on cutover day so the postings made in between are not stranded in Sage.');
+      }
+    }
+  }
+  return {name, specKey, headers, rowCount:data.length, issues, stats, reason:null};
+}
+
+// Verdict discipline is the same as reconcile()'s: anything this cannot examine is named
+// rather than assumed good, and the four manual items are reported as unverifiable every
+// time so a green CSV set can never read as a complete archive on its own.
+function checkArchive(files, todayMs){
+  const list = Array.isArray(files) ? files : [];
+  const bySpec = {}, unknown = [], items = [], blocking = [], warnings = [], notes = [], manualPending = [];
+  for (const f of list){
+    const a = analyseArchiveFile(f && f.name, f && f.text, todayMs);
+    if (a.specKey) (bySpec[a.specKey] = bySpec[a.specKey] || []).push(a);
+    else unknown.push(a);
+  }
+  for (const spec of EXPORT_SPECS){
+    if (spec.kind === 'manual'){
+      items.push({key:spec.key, label:spec.label, kind:'manual', status:'unverifiable', files:[], issues:[], stats:null});
+      manualPending.push(spec.label);
+      continue;
+    }
+    const found = bySpec[spec.key] || [];
+    if (!found.length){
+      items.push({key:spec.key, label:spec.label, kind:'csv', status:'missing', files:[], issues:[], stats:null});
+      blocking.push(spec.label + ': no file in the archive' + (spec.irreversible ? ' — and this is the one that cannot be recreated from anything else' : '') + '.');
+      continue;
+    }
+    if (found.length > 1)
+      warnings.push(spec.label + ': ' + found.length + ' files look like this export (' + found.map(f => f.name).join(', ') +
+        ') — keep one, or the archive holds two versions of the truth and nobody knows which was imported.');
+    const issues = [];
+    for (const f of found) for (const i of f.issues) issues.push({sev:i.sev, text:f.name + ': ' + i.text});
+    for (const i of issues) (i.sev === 'high' ? blocking : warnings).push(i.text);
+    items.push({key:spec.key, label:spec.label, kind:'csv',
+      status: issues.some(i => i.sev === 'high') ? 'issues' : 'ok',
+      files: found.map(f => ({name:f.name, rows:f.rowCount, columns:f.headers.length, stats:f.stats})),
+      issues, stats: found[0].stats});
+  }
+  for (const u of unknown)
+    warnings.push('“' + u.name + '” was not recognised as any of the five Sage exports' +
+      (u.reason ? ' — ' + u.reason : '') + '. It has not been checked.');
+  notes.push(list.length
+    ? 'Read ' + list.length + ' file' + (list.length > 1 ? 's' : '') + ': ' + list.map(f => (f && f.name) || 'unnamed').join(', ') + '.'
+    : 'No files given, so nothing was read.');
+  notes.push('This check can only see the CSV files handed to it. It cannot confirm the Sage backup, the filed VAT returns, the open-item reports or the document layouts — those four are ticked by hand and are not evidence of anything on their own.');
+  return {items, unknown, blocking, warnings, notes, manualPending,
+    verdict: blocking.length ? 'incomplete' : 'complete', checked:list.length};
+}
+
+// The manifest is the archive's index: what was taken, how much of it, and a checksum so a
+// file can be shown years later to be the file that was exported. It records metadata only
+// — filenames, row counts, column names, date ranges — never a value out of the ledger.
+function archiveManifest(res, hashes, stamp, expiry){
+  const H = hashes || {};
+  const md = ['# Sage 50 export archive — manifest', ''];
+  md.push('Generated: ' + (stamp || 'unknown') + (expiry ? ' · Sage licence ends: ' + expiry : ''));
+  md.push('Verdict: **' + (res.verdict === 'complete' ? 'CSV set complete' : 'INCOMPLETE — do not let the licence lapse') + '**');
+  md.push('');
+  md.push('| Export | Status | File | Rows | Columns | Checksum (SHA-256) |');
+  md.push('|---|---|---|---|---|---|');
+  const cell = v => String(v == null ? '' : v).replace(/\|/g, '\\|');   // a | in a filename must not split the row
+  for (const it of res.items){
+    if (!it.files.length){
+      md.push('| ' + it.label + ' | ' + (it.kind === 'manual' ? 'not checkable here — tick by hand' : 'MISSING') + ' | — | — | — | — |');
+      continue;
+    }
+    for (const f of it.files)
+      md.push('| ' + it.label + ' | ' + (it.status === 'ok' ? 'ok' : 'issues') + ' | ' + cell(f.name) + ' | ' +
+        f.rows + ' | ' + f.columns + ' | ' + (H[f.name] || 'not computed') + ' |');
+  }
+  md.push('');
+  // Coverage is reported per file, not per slot. Two audit trails in one archive and a
+  // single coverage line describes one of them while appearing to describe the archive.
+  const audit = res.items.find(i => i.key === 'audit');
+  const dated = audit ? audit.files.filter(f => f.stats && f.stats.first != null) : [];
+  if (dated.length){
+    md.push('## Audit trail coverage', '');
+    for (const f of dated){
+      md.push('- ' + cell(f.name) + ': ' + fmtDateUTC(f.stats.first) + ' to ' + fmtDateUTC(f.stats.last) +
+        ' (' + f.stats.spanDays + ' days), dates read from ' + f.stats.dated + ' of ' + f.stats.rows + ' rows' +
+        (f.stats.undated ? ' — ' + f.stats.undated + ' unreadable' : ''));
+    }
+    md.push('');
+  }
+  const section = (title, lines) => { if (lines.length){ md.push('## ' + title, ''); lines.forEach(l => md.push('- ' + l)); md.push(''); } };
+  section('Blocking', res.blocking);
+  section('Warnings', res.warnings);
+  section('Ticked by hand, not verified by this tool', res.manualPending);
+  section('What was read', res.notes);
+  return md.join('\n') + '\n';
+}
+
 /* ---------- CSV emit ---------- */
 
 function toCSV(objs){
@@ -807,6 +1191,35 @@ TR-DAY-01,Training day,Services,850.00,300.00,4,Day
 `
 };
 
+// The archive demo is assembled from DEMO_FILES *minus* products, plus these. It has to
+// exercise the false-clean guards rather than pass them by luck: a required export absent
+// altogether, an audit trail truncated to a few weeks the way the export dialog's default
+// range truncates it, two files claiming one slot, and a file exported with the header row
+// left off — which parses perfectly and matches nothing.
+const DEMO_ARCHIVE_EXTRA = {
+  'audit_trail.csv': `Type,Account Ref,N/C,Date,Reference,Details,Net,Tax,T/C
+SI,ACME01,4000,02/06/2026,INV-1041,Consultancy — May,2400.00,480.00,T1
+SI,BLUE02,4000,04/06/2026,INV-1042,Platform licence,5000.00,1000.00,T1
+PI,SUPP01,7500,05/06/2026,NCH-8842,Hosting — June,180.00,36.00,T1
+BR,1200,1100,11/06/2026,REC-0912,Acme payment,2880.00,0.00,T9
+SC,CRED03,4000,14/06/2026,CRN-0044,Credit — duplicate charge,650.00,130.00,T1
+PI,SUPP02,5000,19/06/2026,DF-77120,Bureau data,1450.00,290.00,T1
+JD,,7100,30/06/2026,JNL-06,Rent accrual,1500.00,0.00,T9
+JC,,2109,30/06/2026,JNL-06,Rent accrual,1500.00,0.00,T9
+SI,NEWCO4,4000,03/07/2026,INV-1043,Discovery workshop,1200.00,240.00,T1
+PI,SUPP03,7400,,NO-DATE-1,Catering — undated row,325.50,65.10,T1
+BP,1200,7901,09/07/2026,BC-0707,Bank charges,131.00,0.00,T9
+`,
+  'customers_backup_old.csv': `Account Reference,Name,Address Line 1,Town,Postcode,Telephone,Balance
+ACME01,Acme Lending Ltd,1 Fenwick Street,Liverpool,L2 7NA,0151 496 0101,5375.00
+BLUE02,Bluebird Finance plc,20 Chapel Street,Liverpool,L3 9AG,0151 496 0202,11270.00
+`,
+  'nominal_no_headers.csv': `0030,Office Equipment,12400.00,
+1200,Bank Current Account,18930.50,
+4000,Sales - Consultancy,,45200.00
+`
+};
+
 const REC_DEMO_A = `N/C,Name,Debit,Credit
 0030,Office Equipment,12400.00,
 1100,Debtors Control Account,27515.00,
@@ -832,9 +1245,13 @@ const REC_DEMO_B = `Account,Debit,Credit
 
 const CHECKLIST = [
   ['Phase 0 — Discovery', [
-    'Sage contract end date and notice period confirmed',
-    'Full Sage exports run: customers, suppliers, products, nominal/TB, audit trail',
-    'Accountant briefed on parallel-run and sign-off plan',
+    'Sage contract end date confirmed from the contract — and whether it expires or auto-renews',
+    'Cancellation notice deadline established, and diarised (it usually falls well before the end date)',
+    'Every export in tab 0 taken and verified, and the manifest filed with the files',
+    'Full Sage data backup taken, copied off the Sage machine, and its version number recorded',
+    'Accountant briefed on parallel-run and sign-off plan — they hold the veto',
+    'MTD filing route decided and HMRC registration started (it has lead time)',
+    'VAT quarter end located relative to the licence end date — that is the cutover date',
     'ERPNext evaluation instance reviewed with client'
   ]],
   ['Phase 1 — Build', [
@@ -911,12 +1328,18 @@ function buildEntry(name, entityKey, rows, ambiguousWith){
 function renderStrip(){
   let issues = 0, high = 0;
   for (const l of LOADED){ issues += l.result.issues.length; high += l.result.issues.filter(i => i.sev === 'high').length; }
-  $('strip').innerHTML = LOADED.length
+  // The archive chip comes first deliberately. Everything else in this app is recoverable.
+  const arc = ARC
+    ? (ARC.verdict === 'complete'
+        ? '<span class="chip info"><b>archive</b> CSV set complete</span>'
+        : '<span class="chip high"><b>' + ARC.blocking.length + '</b> blocking in the export archive</span>')
+    : '';
+  $('strip').innerHTML = arc + (LOADED.length
     ? '<span class="chip"><b>' + LOADED.length + '</b> export' + (LOADED.length>1?'s':'') + ' loaded</span>' +
       (high ? '<span class="chip high"><b>' + high + '</b> blocking issues</span>' : '') +
       (issues - high > 0 ? '<span class="chip"><b>' + (issues - high) + '</b> warnings</span>' : '') +
       (!issues ? '<span class="chip info"><b>clean</b></span>' : '')
-    : '';
+    : '');
 }
 
 function renderEntities(){
@@ -1007,19 +1430,26 @@ function readFile(file){
   rd.readAsText(file);
 }
 let dragDepth = 0;
-window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; $('dz').classList.add('hot'); });
+const activeTab = () => { const b = document.querySelector('#tabs button.active'); return b ? b.dataset.tab : 'convert'; };
+const dzs = () => [$('dz'), $('dzX')];
+window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; dzs().forEach(d => d.classList.add('hot')); });
 window.addEventListener('dragover', e => e.preventDefault());
-window.addEventListener('dragleave', () => { if (--dragDepth <= 0){ dragDepth = 0; $('dz').classList.remove('hot'); } });
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0){ dragDepth = 0; dzs().forEach(d => d.classList.remove('hot')); } });
 window.addEventListener('drop', e => {
-  e.preventDefault(); dragDepth = 0; $('dz').classList.remove('hot');
-  [...e.dataTransfer.files].forEach(readFile);
+  e.preventDefault(); dragDepth = 0; dzs().forEach(d => d.classList.remove('hot'));
+  // Dropped files go to whichever tab is open — the archive check and the converter want
+  // the same CSVs for different reasons, and silently routing them to the wrong one reads
+  // as the drop having failed.
+  const to = activeTab() === 'export' ? readArchiveFile : readFile;
+  [...e.dataTransfer.files].forEach(to);
 });
 $('btnClear').addEventListener('click', () => { LOADED = []; renderEntities(); renderStrip(); toast('Cleared'); });
 $('btnDemo').addEventListener('click', () => {
   LOADED = [];
   for (const name in DEMO_FILES) addExport(name, DEMO_FILES[name]);
   $('recA').value = REC_DEMO_A; $('recB').value = REC_DEMO_B;
-  toast('Demo exports loaded — deliberately dirty');
+  loadArchiveDemo();
+  toast('Demo loaded — exports deliberately dirty, archive deliberately incomplete');
 });
 
 /* reconcile */
@@ -1068,16 +1498,233 @@ $('btnRec').addEventListener('click', () => {
 });
 $('btnRecDl').addEventListener('click', () => download('reconciliation-report.md', REC_REPORT, 'text/markdown'));
 
+/* export runbook + archive check (tab 0) */
+const EX_KEY = 'migration_xray_export_v1';
+let ARCHIVE_FILES = [];   // {name, text} — held in memory for this tab only, never stored
+let ARC = null;           // last checkArchive result
+
+function exState(){
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(EX_KEY) || '{}'); } catch(e){}
+  if (!s || typeof s !== 'object') s = {};
+  if (!s.ticks || typeof s.ticks !== 'object') s.ticks = {};
+  return s;
+}
+function exSave(s){ try { localStorage.setItem(EX_KEY, JSON.stringify(s)); } catch(e){} }
+
+function arcItem(key){ return ARC ? ARC.items.find(i => i.key === key) : null; }
+
+function renderExpiry(){
+  const s = exState();
+  $('expiryIn').value = s.expiry || '';
+  const out = $('expiryOut');
+  if (!s.expiry){ out.innerHTML = '<span style="color:var(--text-faint)">not set</span>'; return; }
+  const end = parseDate(s.expiry);
+  if (!end){ out.innerHTML = '<span style="color:var(--med)">unreadable date</span>'; return; }
+  const days = Math.ceil((end.getTime() - Date.now()) / 86400000);
+  out.innerHTML = days < 0
+    ? '<b style="color:var(--high)">the licence ended ' + Math.abs(days) + ' days ago</b>'
+    : '<b style="color:' + (days <= 45 ? 'var(--high)' : days <= 90 ? 'var(--med)' : 'var(--info)') + '">' +
+      days + ' day' + (days === 1 ? '' : 's') + ' left</b> to export anything at all';
+}
+
+function renderRunbook(){
+  const s = exState();
+  // Which cards the user had open is their place in a nine-step job. Rebuilding the list
+  // shut every one of them, so dropping a file collapsed the step being worked through.
+  const open = new Set([...document.querySelectorAll('#runbook details[open]')].map(d => d.dataset.spec));
+  let h = '';
+  for (const spec of EXPORT_SPECS){
+    const it = arcItem(spec.key);
+    let cls = 'pending', pill = 'idle', pillTxt = 'not checked';
+    if (spec.kind === 'manual'){
+      if (s.ticks[spec.key]){ cls = 'good'; pill = 'ok'; pillTxt = 'confirmed by hand'; }
+      else { cls = 'pending'; pill = 'warn'; pillTxt = 'tick when done'; }
+    } else if (it && ARC){
+      if (it.status === 'ok'){
+        cls = 'good'; pill = 'ok';
+        // With two files in one slot, one file's row count presented as the slot's count
+        // reads as confirmation that the right one was kept.
+        pillTxt = it.files.length > 1 ? it.files.length + ' files — see warnings' : it.files[0].rows + ' rows checked';
+      }
+      else if (it.status === 'missing'){ cls = 'blocked'; pill = 'bad'; pillTxt = 'not in the archive'; }
+      else { cls = 'blocked'; pill = 'bad'; pillTxt = 'problems found'; }
+    }
+    h += '<details class="rb ' + cls + '" data-spec="' + esc(spec.key) + '"' + (open.has(spec.key) ? ' open' : '') + '><summary>' + esc(spec.label) +
+      '<span class="pill ' + pill + '">' + esc(pillTxt) + '</span></summary><div class="body">' +
+      '<p>' + esc(spec.why) + '</p>' +
+      '<h5>Where</h5><span class="where">' + esc(spec.where) + '</span>' +
+      '<h5>What matters</h5><ul>' + spec.settings.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul>';
+    if (spec.kind === 'csv'){
+      const cols = Object.values(spec.must || {})
+        .concat(spec.needOne ? ['one of: ' + Object.values(spec.needOne).join(' / ')] : [])
+        .concat(Object.values(spec.want || {}));
+      h += '<h5>The file must contain</h5><p>' + esc(cols.join(' · ')) + '</p>';
+      if (it && ARC){
+        for (const f of it.files)
+          h += '<p style="margin-top:8px;color:var(--text)">' + esc(f.name) + ' — ' + f.rows + ' rows, ' + f.columns + ' columns' +
+            (f.stats && f.stats.first != null
+              ? ' · ' + fmtDateUTC(f.stats.first) + ' to ' + fmtDateUTC(f.stats.last) + ' (' + f.stats.spanDays + ' days), dates read from ' + f.stats.dated + ' of ' + f.stats.rows + ' rows'
+              : '') + '</p>';
+        for (const i of it.issues)
+          h += '<div class="issue' + (i.sev === 'high' ? ' high' : '') + '">' + esc(i.text) + '</div>';
+        if (it.status === 'missing')
+          h += '<div class="issue high">Nothing in the archive matched this export.</div>';
+      }
+    } else {
+      h += '<label class="manualTick"><input type="checkbox" data-extick="' + esc(spec.key) + '"' +
+        (s.ticks[spec.key] ? ' checked' : '') + '><span>Done — and this tool has taken your word for it, because no CSV check can see this one.</span></label>';
+    }
+    h += '</div></details>';
+  }
+  $('runbook').innerHTML = h;
+}
+
+function gateHTML(){
+  const s = exState();
+  const outstanding = [];
+  if (!ARC) outstanding.push('No archive has been checked yet — drop the exported CSVs into “Check the archive” below.');
+  else for (const it of ARC.items){
+    if (it.kind !== 'csv') continue;
+    if (it.status === 'missing') outstanding.push(it.label + ' — no file in the archive.');
+    else if (it.status === 'issues') outstanding.push(it.label + ' — exported, but with problems that make it unusable later.');
+  }
+  for (const spec of EXPORT_SPECS)
+    if (spec.kind === 'manual' && !s.ticks[spec.key]) outstanding.push(spec.label + ' — not confirmed.');
+  const warnCount = ARC ? ARC.warnings.length : 0;
+  if (!outstanding.length)
+    return '<div class="gate open"><b>Exports taken and verified.</b>The five CSV exports are present and readable, and the four things this tool cannot check have been confirmed by hand.' +
+      (warnCount ? ' There ' + (warnCount === 1 ? 'is 1 warning' : 'are ' + warnCount + ' warnings') + ' below — none of them blocking, all of them worth reading before the licence lapses.' : '') +
+      '</div>';
+  return '<div class="gate"><b>Exports not taken — this gate blocks everything else.</b>' +
+    'Converting, reconciling and cutting over are all recoverable if they go wrong. Getting the data out is not: once the licence lapses the source may not open at all. Outstanding:' +
+    '<ul>' + outstanding.map(o => '<li>' + esc(o) + '</li>').join('') + '</ul></div>';
+}
+function renderGate(){
+  const h = gateHTML();
+  $('gateTop').innerHTML = h;
+  $('gateCk').innerHTML = h;
+}
+
+function renderArchive(){
+  const host = $('arcOut');
+  if (!ARC){ host.innerHTML = ''; $('btnArcDl').disabled = true; $('arcInfo').textContent = ''; return; }
+  const complete = ARC.verdict === 'complete';
+  let h = '<div class="card" style="margin-top:12px"><h3>' + (complete
+      ? '<span class="tag" style="background:var(--info-soft);color:var(--info)">CSV SET COMPLETE</span>Five exports present and readable'
+      : '<span class="tag" style="background:var(--high-soft);color:var(--high)">INCOMPLETE</span>The archive is not safe to rely on yet') +
+    '<small>' + ARC.checked + ' file' + (ARC.checked === 1 ? '' : 's') + ' read · ' + ARC.blocking.length + ' blocking · ' + ARC.warnings.length + ' warnings</small></h3>';
+  for (const b of ARC.blocking) h += '<div class="issue high">' + esc(b) + '</div>';
+  for (const w of ARC.warnings) h += '<div class="issue">' + esc(w) + '</div>';
+  // What this actually looked at, stated whatever the verdict — a complete verdict over
+  // four of the nine things that matter is still a complete verdict.
+  h += '<div class="issue" style="border-left-color:var(--border);color:var(--text-faint)">' +
+    ARC.notes.map(esc).join('<br>') + '</div>';
+  h += '<div class="tblwrap"><table class="data"><tr><th>Export</th><th>File</th><th style="text-align:right">Rows</th><th style="text-align:right">Cols</th><th>Status</th></tr>';
+  for (const it of ARC.items){
+    if (!it.files.length){
+      const label = it.kind === 'manual' ? 'by hand' : 'MISSING';
+      h += '<tr' + (it.kind === 'csv' ? ' class="bad"' : '') + '><td>' + esc(it.label) + '</td><td>—</td><td class="num">—</td><td class="num">—</td><td>' + label + '</td></tr>';
+      continue;
+    }
+    for (const f of it.files)
+      h += '<tr' + (it.status === 'ok' ? '' : ' class="bad"') + '><td>' + esc(it.label) + '</td><td>' + esc(f.name) +
+        '</td><td class="num">' + f.rows + '</td><td class="num">' + f.columns + '</td><td>' + (it.status === 'ok' ? '✓' : 'issues') + '</td></tr>';
+  }
+  h += '</table></div></div>';
+  host.innerHTML = h;
+  $('btnArcDl').disabled = false;
+  $('arcInfo').textContent = complete
+    ? 'Download the manifest and keep it with the files.'
+    : 'Clear every blocking line before the licence lapses.';
+}
+
+function runArchiveCheck(){
+  ARC = ARCHIVE_FILES.length ? checkArchive(ARCHIVE_FILES, Date.now()) : null;
+  renderArchive(); renderRunbook(); renderGate(); renderStrip();
+}
+function addArchiveFile(name, text){
+  ARCHIVE_FILES = ARCHIVE_FILES.filter(f => f.name !== name);
+  ARCHIVE_FILES.push({name, text:String(text || '')});
+  runArchiveCheck();
+}
+function readArchiveFile(file){
+  const rd = new FileReader();
+  rd.onload = () => { addArchiveFile(file.name, rd.result); toast(file.name + ' added to the archive check'); };
+  rd.readAsText(file);
+}
+
+async function sha256(text){
+  try {
+    if (!(window.crypto && window.crypto.subtle)) return null;
+    const buf = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+    return [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,'0')).join('');
+  } catch(e){ return null; }
+}
+
+$('expiryIn').addEventListener('change', e => {
+  const s = exState(); s.expiry = e.target.value; exSave(s); renderExpiry();
+});
+$('runbook').addEventListener('change', e => {
+  const cb = e.target.closest('[data-extick]');
+  if (!cb) return;
+  const s = exState(); s.ticks[cb.dataset.extick] = cb.checked; exSave(s);
+  // Update this card in place rather than rebuilding the list — a tick must not move
+  // anything else on the page while someone is working down it.
+  const card = cb.closest('details.rb'), pill = card && card.querySelector('.pill');
+  if (card) card.className = 'rb ' + (cb.checked ? 'good' : 'pending');
+  if (pill){
+    pill.className = 'pill ' + (cb.checked ? 'ok' : 'warn');
+    pill.textContent = cb.checked ? 'confirmed by hand' : 'tick when done';
+  }
+  renderGate();
+});
+$('btnArcAdd').addEventListener('click', () => $('arcInput').click());
+$('arcInput').addEventListener('change', e => { [...e.target.files].forEach(readArchiveFile); e.target.value = ''; });
+$('btnArcClear').addEventListener('click', () => { ARCHIVE_FILES = []; runArchiveCheck(); toast('Archive check cleared'); });
+$('btnArcDemo').addEventListener('click', () => { loadArchiveDemo(); toast('Demo archive loaded — deliberately incomplete'); });
+function loadArchiveDemo(){
+  ARCHIVE_FILES = [];
+  for (const name in DEMO_FILES) if (name !== 'products.csv') ARCHIVE_FILES.push({name, text:DEMO_FILES[name]});
+  for (const name in DEMO_ARCHIVE_EXTRA) ARCHIVE_FILES.push({name, text:DEMO_ARCHIVE_EXTRA[name]});
+  runArchiveCheck();
+}
+$('btnArcDl').addEventListener('click', async () => {
+  if (!ARC) return;
+  const hashes = {};
+  let any = false;
+  for (const f of ARCHIVE_FILES){
+    const hx = await sha256(f.text);
+    if (hx){ hashes[f.name] = hx; any = true; }
+  }
+  // Copy rather than mutate ARC — otherwise a second download stacks the note again, and
+  // the on-screen report starts disagreeing with the report it came from.
+  const res = Object.assign({}, ARC);
+  if (!any) res.notes = ARC.notes.concat(
+    ['Checksums could not be computed in this browser context (SHA-256 needs a secure context — open the page over https or from the filesystem). The manifest is otherwise complete.']);
+  const s = exState();
+  download('MANIFEST.md', archiveManifest(res, hashes, new Date().toISOString().slice(0,16).replace('T',' ') + ' UTC', s.expiry || ''), 'text/markdown');
+  toast('Manifest downloaded');
+});
+renderExpiry(); renderRunbook(); renderGate(); renderArchive();
+
 /* checklist */
-const CK_KEY = 'migration_xray_checks_v1';
+const CK_KEY = 'migration_xray_checks_v2';
+// Tick ids are derived from the text, not from position. They used to be ck0, ck1, ck2…,
+// which means inserting one item silently shifts every tick after it onto a different gate —
+// and a cutover gate that reads as done because the list grew is exactly the kind of
+// confident wrong answer this app exists to prevent. (Bumping CK_KEY to v2 resets old ticks
+// once; that is the safe direction to fail.)
+function ckId(phase, item){ return 'ck_' + normKey(phase).slice(0,14) + '_' + normKey(item).slice(0,48); }
+
 function renderChecks(){
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(CK_KEY) || '{}'); } catch(e){}
-  let h = '', n = 0;
+  let h = '';
   for (const [phase, items] of CHECKLIST){
     h += '<div class="phaseH">' + esc(phase) + '</div>';
     for (const item of items){
-      const id = 'ck' + n++;
+      const id = ckId(phase, item);
       const on = !!saved[id];
       h += '<div class="check' + (on ? ' done' : '') + '"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '><label for="' + id + '">' + esc(item) + '</label></div>';
     }
@@ -1096,11 +1743,10 @@ $('btnCkReset').addEventListener('click', () => { localStorage.removeItem(CK_KEY
 $('btnCkDl').addEventListener('click', () => {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(CK_KEY) || '{}'); } catch(e){}
-  let n = 0;
   const md = ['# Cutover checklist — Sage 50 → ERPNext',''];
   for (const [phase, items] of CHECKLIST){
     md.push('## ' + phase);
-    for (const item of items) md.push('- [' + (saved['ck' + n++] ? 'x' : ' ') + '] ' + item);
+    for (const item of items) md.push('- [' + (saved[ckId(phase, item)] ? 'x' : ' ') + '] ' + item);
     md.push('');
   }
   download('cutover-checklist.md', md.join('\n'), 'text/markdown');

@@ -239,11 +239,19 @@ function parseCSV(text){
   return rows;
 }
 
+// Behaviourally identical to sage.html's and migrate.html's parseMoney. It had drifted:
+// those two learned Sage's trailing-minus and CR/DR export notations and this one did not,
+// so the same "480.00-" rebate line was a negative cost in the ledger tools and an
+// unreadable cell here. tests/migrate.test.mjs now compares all three directly.
 function parseNum(s){
   if (s == null || String(s).trim() === '') return null;
-  let t = String(s).replace(/[£$\s]/g,'');
+  let t = String(s).replace(/[£$ \s]/g,'');
   let neg = false;
   if (/^\(.*\)$/.test(t)){ neg = true; t = t.slice(1,-1); }
+  const suf = t.match(/^(.*?)(CR|DR)$/i);
+  if (suf){ t = suf[1]; if (suf[2].toUpperCase() === 'CR') neg = !neg; }
+  if (/-$/.test(t)){ neg = !neg; t = t.slice(0,-1); }
+  if (t === '') return null;
   // Commas must be genuine thousands separators. "9,50" is a European decimal comma
   // or a typo — stripping it blindly turns 9.50 into 950, so refuse it instead.
   if (t.indexOf(',') !== -1){

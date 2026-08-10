@@ -312,10 +312,47 @@ Same one-file/IIFE/pure-DOM-split rules. Tooling for the client's Sage 50 → se
 ERPNext migration (parallel run, cutover at Sage contract expiry). Domain knowledge lives
 in the `sage-migration` skill — read it first.
 
-Three tabs: **Convert** (Sage exports → ERPNext import CSVs with defect profiling),
-**Reconcile** (trial-balance or transaction-level comparison between the two systems
-during the parallel run; "clean" report gates cutover), **Checklist** (cutover gates;
-ticks in localStorage — never client data).
+Four tabs: **Get the data out** (Phase 0 export runbook + archive completeness check —
+the default landing tab), **Convert** (Sage exports → ERPNext import CSVs with defect
+profiling), **Reconcile** (trial-balance or transaction-level comparison between the two
+systems during the parallel run; "clean" report gates cutover), **Checklist** (cutover
+gates; ticks in localStorage — never client data).
+
+**Tab 0 exists because it is the only irreversible step.** Everything else in the app is
+quality assurance over data that can still be retrieved; when the Sage licence lapses the
+software can go read-only and the ledger stops being exportable at all. `EXPORT_SPECS` is
+the runbook: five CSV exports the tool can verify, and four items no CSV check can see
+(the full Sage backup, the filed VAT returns, the open-item reports, the document
+layouts). `checkArchive(files, todayMs)` matches each dropped file to its slot and applies
+the same verdict discipline as `reconcile()` — anything it cannot examine is named, and
+the four manual items are returned as `manualPending` **every time** so a green CSV set can
+never read as a complete archive on its own. Rules the archive check must keep:
+
+- **A missing export blocks.** So does a header-only file, a file whose rows do not line
+  up, and a nominal export carrying no debit/credit/balance column — that last one is the
+  *account list*, which detects perfectly and holds none of the figures the opening
+  position is built from.
+- **The audit trail is classified before `detectEntity` runs.** It carries an Account
+  column, which is a `nominal` alias, so it would otherwise fill the trial-balance slot,
+  never have its date coverage looked at, and make the real TB read as a duplicate.
+- **Date coverage is disclosed wherever a range is printed**, per file rather than per
+  slot. A span under a year is challenged (the Sage export dialog offers a default date
+  range, and accepting it is how "everything" becomes a slice) but only warns — some
+  companies really are that young. No readable dates at all blocks.
+- **The clock is injected** (`todayMs`), as in `sage.html`, so the stale-export warning is
+  deterministic in tests.
+- **A file exported without its header row is named as such.** It parses perfectly and
+  matches nothing, which reads as the wrong file when it is the right file exported
+  unusably. Same for a party export that could be either book — `detectEntity`'s refusal
+  to guess is carried into the archive, because after Sage has gone nobody can answer
+  "which of these is the creditors ledger" from the file itself.
+- **`archiveManifest` records metadata only** — filenames, row counts, column names, date
+  ranges, SHA-256 checksums. Never a value out of the ledger. Checksums need a secure
+  context; where they are unavailable the manifest says so rather than leaving the column
+  blank.
+- **Checklist tick ids are derived from the item text, not from position.** They were
+  `ck0, ck1, ck2…`, so inserting one item shifted every tick after it onto a different
+  gate — a cutover gate reading as done because the list grew.
 
 Key pure functions: `detectEntity` (fuzzy header scoring, then the **filename decides**
 customers vs suppliers — Sage supplier records carry a Credit Limit too, so header bonuses
@@ -324,7 +361,9 @@ must never outvote it; a header/filename conflict is declared ambiguous rather t
 opening journal must balance and reports its delta), `rootTypeFor` (Sage UK nominal ranges →
 ERPNext root types), `parseMoney` (strict), `reconcile`/`parseSide` (TB or transaction shape
 auto-detect, per-account aggregation, ref+amount multiset diff), `accountCode`,
-`checkWidth` / `checkFormulaInjection` (shared across all three converters).
+`checkWidth` / `checkFormulaInjection` (shared across all three converters),
+`parseDate` (strict, identical to `sage.html`'s), `analyseArchiveFile` / `checkArchive` /
+`archiveManifest` (the Phase 0 archive check).
 
 **Rules the pure layer must keep** (each was a defect found by adversarial audit):
 
@@ -363,8 +402,13 @@ auto-detect, per-account aggregation, ref+amount multiset diff), `accountCode`,
 
 **Smoke test (migrate.html)** after any change:
 
-0. `node tests/migrate.test.mjs` passes (196 assertions over the pure layer — the
+0. `node tests/migrate.test.mjs` passes (298 assertions over the pure layer — the
    regression suite; keep it green and extend it with each fix).
+0b. Lands on **Get the data out**. Demo archive loads 6 files and reads **incomplete**:
+   products missing (blocking), plus the truncated-audit-trail, duplicate-slot,
+   missing-header-row and unreadable-date warnings — the demo must exercise the
+   false-clean guards, not pass them by luck. Gate stays shut until the CSV set is
+   complete *and* all four manual items are ticked. MANIFEST.md downloads with checksums.
 1. Demo loads all four exports; strip shows blocking issues + warnings; every issue class
    fires (dup refs, bad VAT no, missing postcode, dup stock code, negative qty, missing
    UoM, cost>sale, zero-cost stock, suspense-range nominal, unparseable amount, TB
@@ -411,7 +455,10 @@ where-used — must take the `cyclicNodes` Set, never the `findCycles` list.
   different values can format to the same 2dp string, which makes a "these disagree"
   message read as nonsense — it falls back to full precision when that happens.
 - `parseNum` refuses commas that are not thousands separators. `"9,50"` is a European
-  decimal comma or a typo; stripping it blindly turns 9.50 into 950.
+  decimal comma or a typo; stripping it blindly turns 9.50 into 950. It also reads Sage's
+  bracket negatives, trailing minus and `CR`/`DR` suffixes — it is the same parser as
+  `sage.html`'s and `migrate.html`'s `parseMoney`, and it had silently drifted from both
+  until `tests/migrate.test.mjs` started comparing the three directly.
 - The ERPNext export carries `Scrap %` and `Qty Consumed Per Unit` so the import can
   reproduce the cost this app displayed. An export that cannot reproduce the number the
   user signed off is not a valid export.
@@ -433,6 +480,8 @@ header alias to decide which convention applies; never test `OBSOLETE_RE` direct
 
 0. `node tests/bom.test.mjs` passes (81 assertions over the pure layer, one per fixed
    defect — this is the regression suite, keep it green and extend it with each detector).
+   `node tests/migrate.test.mjs` also has to pass: it compares this app's `parseNum`
+   against its two siblings, so a change here fails that suite rather than this one.
 1. Demo loads and lands on Overview; strip shows 11 blocking / 6 warnings / 3 info; all 20
    families appear on Issues.
 2. Overview: FG-BIKE-01 shows a rolled-up cost, FG-BIKE-02 and FG-TRAILER-01 are named as
@@ -447,20 +496,32 @@ header alias to decide which convention applies; never test `OBSOLETE_RE` direct
 ## Testing beyond the smoke tests
 
 Three committed suites, one per accounting app: `tests/bom.test.mjs` (81 assertions),
-`tests/sage.test.mjs` (116) and `tests/migrate.test.mjs` (196). Each slices its app at the
+`tests/sage.test.mjs` (116) and `tests/migrate.test.mjs` (298). Each slices its app at the
 DOM-layer marker, evaluates the pure half in a `vm` context with no `document`, and asserts
 against the exact inputs that broke each fixed defect. Run them with
 `node tests/<app>.test.mjs`. Never write a throwaway harness in a scratch directory — an
 earlier `migrate.html` suite was written that way and was simply gone by the next session.
 
 **A suite that has never failed has not been shown to work.** `tests/migrate.test.mjs`
+**The sibling rule is now enforced by the build, not by memory.** `tests/migrate.test.mjs`
+loads `sage.html`'s and `bom.html`'s pure layers alongside its own and compares
+`parseMoney` / `parseNum` / `parseDate` directly on a table of awkward inputs. It found
+drift the first time it ran: `bom.html`'s `parseNum` had never learned the trailing-minus
+and `CR`/`DR` notations the other two read, so the same `480.00-` rebate line was a
+negative cost in the ledger tools and an unreadable cell in the BOM tool. Fixed. Add to
+the case tables rather than writing a fourth parser.
+
 passed on its first run, which is exactly when to distrust it, so it was mutation-tested:
 guards were broken one at a time (`parseMoney` accepting `(-5.00)`, the transaction key
 reverting to absolute amounts, `warnings` no longer blocking a clean verdict, journal legs
 left unrounded, quotes opening mid-cell, `accountCode` truncating at the first non-digit,
 the filename no longer overriding header bonuses, and so on). **21 of 21 mutations are
-caught.** Do the same after adding a block of assertions — passing is not evidence, and two
-weak assertions were found and tightened this way.
+caught.** The Phase 0 archive block was mutation-tested the same way — **21 of 21** —
+and it earned its keep immediately: one assertion turned out to cover nothing, because
+the guard it tested (a `must`-column check in `analyseArchiveFile`) was unreachable for
+every spec, detection having already refused those columns. It was replaced with a check
+detection does *not* make. Do the same after adding a block of assertions — passing is not
+evidence, and three weak assertions have now been found and fixed this way.
 
 `json.html` has no suite. It is the lowest-stakes app (payload QA, not client accounting
 data) and has never been audited.
