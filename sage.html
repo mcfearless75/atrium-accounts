@@ -230,9 +230,28 @@ details summary{cursor:pointer;font-size:12px;color:var(--text-dim);margin-top:8
 #toast.show{opacity:1}
 @media (prefers-reduced-motion:reduce){#toast{transition:none}}
 @media (max-width:900px){main{flex-direction:column}#left{border-right:none;border-bottom:1px solid var(--border)}}
+
+/* shared product bar — identical in every module */
+.appbar{display:flex;align-items:center;gap:20px;padding:0 16px;background:#11161d;border-bottom:1px solid var(--border);flex-wrap:wrap;flex:none}
+.appbar .brand{font-weight:700;font-size:14px;letter-spacing:-.2px;color:var(--text);padding:9px 0;white-space:nowrap;text-decoration:none}
+.appbar .brand:hover{color:var(--accent)}
+.appbar .brand span{color:var(--accent)}
+.appbar nav{display:flex;gap:2px;flex-wrap:wrap}
+.appbar nav a{padding:9px 12px;font-size:13px;font-weight:500;color:var(--text-dim);border-bottom:2px solid transparent;white-space:nowrap;text-decoration:none}
+.appbar nav a:hover{color:var(--text)}
+.appbar nav a.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.appbar .env{margin-left:auto;font-size:10.5px;color:var(--text-faint);letter-spacing:.05em;padding:9px 0;white-space:nowrap}
+@media (max-width:640px){.appbar .env{display:none}}
 </style>
 </head>
 <body>
+
+<div class="appbar">
+  <a class="brand" href="index.html">Atrium<span>.</span></a>
+  <nav><a href="index.html">Home</a><a href="sage.html" class="on">Ledger</a><a href="bom.html">Bills of materials</a><a href="migrate.html">Migration</a><a href="json.html">Payloads</a></nav>
+  <span class="env">100% CLIENT-SIDE</span>
+</div>
+
 
 <header>
   <div class="logo">Sage <em>X-Ray</em><small>LEDGER WORKBENCH · 100% CLIENT-SIDE</small></div>
@@ -242,7 +261,6 @@ details summary{cursor:pointer;font-size:12px;color:var(--text-dim);margin-top:8
     <button id="btnUpload">Upload</button>
     <button id="btnPaste">Paste / load</button>
     <button id="btnMask" title="Mask account names and narrative in every surface">Mask: off</button>
-    <a href="index.html" style="align-self:center;font-size:12px">JSON X-Ray →</a>
   </div>
 </header>
 

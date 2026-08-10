@@ -139,9 +139,28 @@ table.data tr.bad td{background:var(--high-soft)}
 #toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--bg-raise2);border:1px solid var(--accent);color:var(--text);border-radius:20px;padding:7px 18px;font-size:13px;z-index:80;opacity:0;transition:opacity .2s;pointer-events:none}
 #toast.show{opacity:1}
 @media (prefers-reduced-motion:reduce){#toast{transition:none}}
+
+/* shared product bar — identical in every module */
+.appbar{display:flex;align-items:center;gap:20px;padding:0 16px;background:#11161d;border-bottom:1px solid var(--border);flex-wrap:wrap;flex:none}
+.appbar .brand{font-weight:700;font-size:14px;letter-spacing:-.2px;color:var(--text);padding:9px 0;white-space:nowrap;text-decoration:none}
+.appbar .brand:hover{color:var(--accent)}
+.appbar .brand span{color:var(--accent)}
+.appbar nav{display:flex;gap:2px;flex-wrap:wrap}
+.appbar nav a{padding:9px 12px;font-size:13px;font-weight:500;color:var(--text-dim);border-bottom:2px solid transparent;white-space:nowrap;text-decoration:none}
+.appbar nav a:hover{color:var(--text)}
+.appbar nav a.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.appbar .env{margin-left:auto;font-size:10.5px;color:var(--text-faint);letter-spacing:.05em;padding:9px 0;white-space:nowrap}
+@media (max-width:640px){.appbar .env{display:none}}
 </style>
 </head>
 <body>
+
+<div class="appbar">
+  <a class="brand" href="index.html">Atrium<span>.</span></a>
+  <nav><a href="index.html">Home</a><a href="sage.html">Ledger</a><a href="bom.html" class="on">Bills of materials</a><a href="migrate.html">Migration</a><a href="json.html">Payloads</a></nav>
+  <span class="env">100% CLIENT-SIDE</span>
+</div>
+
 
 <header>
   <div class="logo">BOM <em>X-Ray</em><small>BILL OF MATERIALS WORKBENCH · 100% CLIENT-SIDE</small></div>
@@ -150,8 +169,6 @@ table.data tr.bad td{background:var(--high-soft)}
     <button id="btnDemo">Demo</button>
     <button id="btnUpload">Upload BOM</button>
     <button id="btnClear">Clear</button>
-    <a href="sage.html" style="font-size:12px">Sage X-Ray →</a>
-    <a href="migrate.html" style="font-size:12px">Migration X-Ray →</a>
   </div>
 </header>
 

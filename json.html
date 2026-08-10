@@ -1,0 +1,1757 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JSON X-Ray — Payload Workbench</title>
+<meta name="description" content="Client-side JSON inspection workbench: quality findings, PII scanning, diff mode and custom rule packs. Nothing leaves your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;
+  --bg-raise:#161b22;
+  --bg-raise2:#1c2330;
+  --border:#2d333b;
+  --text:#e6edf3;
+  --text-dim:#8b949e;
+  --text-faint:#606a76;
+  --accent:#58a6ff;
+  --accent-soft:rgba(88,166,255,.14);
+  --high:#f85149;
+  --high-soft:rgba(248,81,73,.14);
+  --med:#d29922;
+  --med-soft:rgba(210,153,34,.14);
+  --info:#3fb950;
+  --info-soft:rgba(63,185,80,.12);
+  --pii:#bc8cff;
+  --pii-soft:rgba(188,140,255,.14);
+  --add:#3fb950;
+  --rem:#f85149;
+  --chg:#d29922;
+  --typ:#bc8cff;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --radius:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;display:flex;flex-direction:column;overflow:hidden}
+button{font-family:inherit;font-size:13px;color:var(--text);background:var(--bg-raise2);border:1px solid var(--border);border-radius:var(--radius);padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#0d1117;font-weight:600}
+button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+input[type=text],textarea{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:6px 10px;font-size:13px}
+textarea{font-family:var(--mono);font-size:12px;resize:vertical}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}
+::-webkit-scrollbar-track{background:transparent}
+
+/* header */
+header{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--bg-raise);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.logo{font-weight:700;font-size:15px;letter-spacing:.3px;white-space:nowrap}
+.logo em{color:var(--accent);font-style:normal}
+.logo small{display:block;font-weight:400;font-size:10px;color:var(--text-faint);letter-spacing:.4px}
+#strip{display:flex;gap:8px;flex:1;flex-wrap:wrap;align-items:center;min-width:0}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);white-space:nowrap;cursor:default}
+.chip b{color:var(--text);font-weight:600}
+.chip.click{cursor:pointer}
+.chip.click:hover{border-color:var(--accent)}
+.chip.high{border-color:var(--high);background:var(--high-soft);color:var(--high)}
+.chip.high b{color:var(--high)}
+.chip.med{border-color:var(--med);background:var(--med-soft);color:var(--med)}
+.chip.med b{color:var(--med)}
+.chip.info{border-color:var(--info);background:var(--info-soft);color:var(--info)}
+.chip.info b{color:var(--info)}
+.chip.pii{border-color:var(--pii);background:var(--pii-soft);color:var(--pii)}
+.chip.pii b{color:var(--pii)}
+.chip.diff{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
+.chip.diff b{color:var(--accent)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* layout */
+main{flex:1;display:flex;min-height:0}
+#left{flex:1.2;display:flex;flex-direction:column;min-width:0;border-right:1px solid var(--border)}
+#right{flex:1;display:flex;flex-direction:column;min-width:0}
+.paneHead{display:flex;gap:8px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--border);background:var(--bg-raise)}
+#search{flex:1;min-width:0;font-family:var(--mono)}
+#searchInfo{font-size:11px;color:var(--text-dim);white-space:nowrap}
+#tree{flex:1;overflow:auto;padding:10px 14px;font-family:var(--mono);font-size:12.5px;line-height:1.7}
+
+/* tree nodes */
+.node{white-space:nowrap}
+.row{display:inline-flex;align-items:baseline;gap:6px;border-radius:4px;padding:0 4px}
+.row.hit{background:var(--accent-soft);outline:1px solid var(--accent)}
+.row.piiRow .val{color:var(--pii)}
+.twist{display:inline-block;width:14px;color:var(--text-faint);cursor:pointer;user-select:none;text-align:center}
+.twist.leafPad{cursor:default}
+.key{color:#79c0ff}
+.idx{color:var(--text-faint)}
+.punct{color:var(--text-faint)}
+.val.string{color:#a5d6ff}
+.val.number{color:#f2cc60}
+.val.boolean{color:#ff9bce}
+.val.null{color:var(--text-faint);font-style:italic}
+.meta{color:var(--text-faint);font-size:11px;margin-left:6px}
+.kids{padding-left:18px;border-left:1px solid #21262d;margin-left:6px}
+.closed>.kids{display:none}
+.masked{color:var(--pii)!important;letter-spacing:2px}
+
+/* tabs */
+#tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg-raise);overflow-x:auto}
+#tabs button{border:none;border-radius:0;background:none;padding:9px 14px;color:var(--text-dim);border-bottom:2px solid transparent;white-space:nowrap}
+#tabs button:hover{color:var(--text)}
+#tabs button.active{color:var(--accent);border-bottom-color:var(--accent)}
+#tabs button .n{font-size:10px;background:var(--bg-raise2);border-radius:10px;padding:1px 6px;margin-left:5px;color:var(--text-dim)}
+#tabs button.active .n{background:var(--accent-soft);color:var(--accent)}
+.tabBody{flex:1;overflow:auto;padding:14px;display:none}
+.tabBody.active{display:block}
+
+/* findings */
+.finding{border:1px solid var(--border);border-left:3px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:10px;background:var(--bg-raise)}
+.finding.high{border-left-color:var(--high)}
+.finding.med{border-left-color:var(--med)}
+.finding.info{border-left-color:var(--info)}
+.finding.custom{border-left-color:var(--accent)}
+.finding h4{font-size:13px;margin-bottom:3px;display:flex;gap:8px;align-items:center}
+.sev{font-size:10px;font-weight:700;letter-spacing:.6px;padding:1px 7px;border-radius:10px;text-transform:uppercase}
+.sev.high{background:var(--high-soft);color:var(--high)}
+.sev.med{background:var(--med-soft);color:var(--med)}
+.sev.info{background:var(--info-soft);color:var(--info)}
+.finding p{color:var(--text-dim);font-size:12.5px;margin-bottom:6px}
+.paths{display:flex;flex-wrap:wrap;gap:5px}
+.pathLink{font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 7px;cursor:pointer;border:none}
+.pathLink:hover{text-decoration:underline}
+.empty{color:var(--text-dim);padding:24px;text-align:center;font-size:13px}
+
+/* tables */
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;color:var(--text-dim);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg);z-index:1}
+td{padding:4px 8px;border-bottom:1px solid #1b212b;vertical-align:top}
+td.mono,th.mono{font-family:var(--mono);font-size:11.5px}
+td .pathLink{padding:0;background:none}
+tr.d-add td:first-child{border-left:3px solid var(--add)}
+tr.d-rem td:first-child{border-left:3px solid var(--rem)}
+tr.d-chg td:first-child{border-left:3px solid var(--chg)}
+tr.d-typ td:first-child{border-left:3px solid var(--typ)}
+.dk{font-size:10px;font-weight:700;letter-spacing:.5px;padding:1px 6px;border-radius:4px;text-transform:uppercase}
+.dk.add{background:var(--info-soft);color:var(--add)}
+.dk.rem{background:var(--high-soft);color:var(--rem)}
+.dk.chg{background:var(--med-soft);color:var(--chg)}
+.dk.typ{background:var(--pii-soft);color:var(--typ)}
+.old{color:var(--rem);text-decoration:line-through}
+.new{color:var(--add)}
+.arrow{color:var(--text-faint);padding:0 4px}
+
+/* insights */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+.stat{background:var(--bg-raise);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px}
+.stat b{display:block;font-size:19px;font-weight:700}
+.stat span{font-size:11px;color:var(--text-dim)}
+h3.sect{font-size:12px;text-transform:uppercase;letter-spacing:.8px;color:var(--text-dim);margin:16px 0 8px}
+
+/* rules tab */
+.ruleBox{display:flex;flex-direction:column;gap:8px;margin-bottom:14px}
+.ruleBox textarea{width:100%;min-height:120px}
+.ruleRow{display:flex;gap:8px;flex-wrap:wrap}
+.ruleItem{border:1px solid var(--border);border-radius:var(--radius);background:var(--bg-raise);padding:8px 10px;margin-bottom:8px;font-size:12.5px;display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+.ruleItem code{font-family:var(--mono);font-size:11px;color:var(--text-dim)}
+.note{font-size:11.5px;color:var(--text-dim);line-height:1.5}
+
+/* overlay */
+#overlay{position:fixed;inset:0;background:rgba(4,8,15,.82);display:flex;align-items:center;justify-content:center;z-index:50;padding:20px}
+#overlay.hidden{display:none}
+.panel{background:var(--bg-raise);border:1px solid var(--border);border-radius:12px;width:min(860px,100%);max-height:92vh;overflow:auto;padding:22px}
+.panel h2{font-size:17px;margin-bottom:4px}
+.panel .sub{color:var(--text-dim);font-size:12.5px;margin-bottom:14px}
+.panel textarea{width:100%;min-height:180px}
+.panel label.fileBtn{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--text);background:var(--bg-raise2);border:1px solid var(--border);border-radius:var(--radius);padding:6px 12px;cursor:pointer}
+.panel label.fileBtn:hover{border-color:var(--accent)}
+.panel input[type=file]{display:none}
+.panelRow{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center}
+#cmpWrap{margin-top:14px}
+#cmpWrap.collapsed textarea,#cmpWrap.collapsed .cmpTools{display:none}
+#cmpToggle{background:none;border:none;color:var(--accent);padding:0;font-size:13px}
+#cmpWrap textarea{min-height:110px;margin-top:8px}
+.cmpTools{margin-top:8px}
+#loadErr{color:var(--high);font-family:var(--mono);font-size:12px;margin-top:10px;white-space:pre-wrap;display:none}
+.privacy{margin-top:14px;font-size:11.5px;color:var(--text-faint);border-top:1px solid var(--border);padding-top:10px}
+
+/* copy affordances */
+.key,.val{cursor:copy}
+.key:hover,.val:hover{text-decoration:underline dotted}
+
+/* toast */
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--bg-raise2);border:1px solid var(--accent);color:var(--text);font-size:12.5px;padding:7px 16px;border-radius:20px;z-index:80;opacity:0;pointer-events:none}
+#toast.show{opacity:1}
+
+/* drag & drop veil */
+#dropVeil{position:fixed;inset:0;background:rgba(13,17,23,.88);border:3px dashed var(--accent);z-index:70;display:none;align-items:center;justify-content:center;font-size:18px;color:var(--accent);font-weight:600;pointer-events:none}
+#dropVeil.show{display:flex}
+
+/* schema block */
+#schemaPre{font-family:var(--mono);font-size:11.5px;line-height:1.5;background:var(--bg-raise);border:1px solid var(--border);border-radius:var(--radius);padding:12px;overflow:auto;max-height:340px;white-space:pre}
+details.schemaWrap summary{cursor:pointer;color:var(--accent);font-size:12.5px;margin-bottom:8px}
+
+/* query tab */
+#qInput{width:100%;font-family:var(--mono)}
+.qErr{color:var(--high);font-family:var(--mono);font-size:12px;margin-top:8px}
+
+@media (prefers-reduced-motion:no-preference){
+  .finding,.chip,button{transition:border-color .15s,background .15s}
+  #toast{transition:opacity .2s}
+}
+@media (max-width:900px){
+  main{flex-direction:column}
+  #left{border-right:none;border-bottom:1px solid var(--border)}
+}
+
+/* shared product bar — identical in every module */
+.appbar{display:flex;align-items:center;gap:20px;padding:0 16px;background:#11161d;border-bottom:1px solid var(--border);flex-wrap:wrap;flex:none}
+.appbar .brand{font-weight:700;font-size:14px;letter-spacing:-.2px;color:var(--text);padding:9px 0;white-space:nowrap;text-decoration:none}
+.appbar .brand:hover{color:var(--accent)}
+.appbar .brand span{color:var(--accent)}
+.appbar nav{display:flex;gap:2px;flex-wrap:wrap}
+.appbar nav a{padding:9px 12px;font-size:13px;font-weight:500;color:var(--text-dim);border-bottom:2px solid transparent;white-space:nowrap;text-decoration:none}
+.appbar nav a:hover{color:var(--text)}
+.appbar nav a.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.appbar .env{margin-left:auto;font-size:10.5px;color:var(--text-faint);letter-spacing:.05em;padding:9px 0;white-space:nowrap}
+@media (max-width:640px){.appbar .env{display:none}}
+</style>
+</head>
+<body>
+
+<div class="appbar">
+  <a class="brand" href="index.html">Atrium<span>.</span></a>
+  <nav><a href="index.html">Home</a><a href="sage.html">Ledger</a><a href="bom.html">Bills of materials</a><a href="migrate.html">Migration</a><a href="json.html" class="on">Payloads</a></nav>
+  <span class="env">100% CLIENT-SIDE</span>
+</div>
+
+
+<header>
+  <div class="logo">JSON <em>X-Ray</em><small>payload workbench · Bluewater Associates</small></div>
+  <div id="strip" aria-live="polite"></div>
+  <div class="actions">
+    <button id="btnLoad" class="primary">Load payload</button>
+    <button id="btnUpload" title="Upload a .json file from your computer (or just drag one onto the window)">Upload</button>
+    <input type="file" id="fileHeader" accept=".json,.jsonl,.ndjson,.txt,application/json" style="display:none">
+    <button id="btnDemo">Demo</button>
+    <button id="btnMask" aria-pressed="false" title="Mask detected personal data everywhere">Mask PII: off</button>
+    <button id="btnCsv" title="Download the flattened leaves as CSV">CSV</button>
+    <button id="btnReport" title="Download a masked Markdown findings report">Report</button>
+  </div>
+</header>
+
+<main>
+  <section id="left" aria-label="Payload tree">
+    <div class="paneHead">
+      <input id="search" type="text" placeholder="Search keys, paths or values… (Enter = next match)" aria-label="Search payload">
+      <span id="searchInfo"></span>
+      <button id="btnPretty" title="Copy formatted JSON (2-space indent). Shift-click to download. Alt-click for 4-space indent.">Beautify</button>
+      <button id="btnMinify" title="Copy minified JSON. Shift-click to download.">Minify</button>
+      <button id="btnSort" aria-pressed="false" title="Sort object keys A→Z in the tree and in Beautify/Minify output (key order is not semantic in JSON)">A→Z</button>
+    </div>
+    <div id="tree" tabindex="0"></div>
+  </section>
+
+  <section id="right" aria-label="Analysis">
+    <nav id="tabs">
+      <button data-tab="insights" class="active">Insights</button>
+      <button data-tab="quality">Quality <span class="n" id="nQuality">0</span></button>
+      <button data-tab="pii">PII <span class="n" id="nPii">0</span></button>
+      <button data-tab="flatten">Flatten</button>
+      <button data-tab="query">Query</button>
+      <button data-tab="diff">Diff <span class="n" id="nDiff">–</span></button>
+      <button data-tab="rules">Rules <span class="n" id="nRules">0</span></button>
+    </nav>
+    <div class="tabBody active" id="tab-insights"></div>
+    <div class="tabBody" id="tab-quality"></div>
+    <div class="tabBody" id="tab-pii"></div>
+    <div class="tabBody" id="tab-flatten"></div>
+    <div class="tabBody" id="tab-query"></div>
+    <div class="tabBody" id="tab-diff"></div>
+    <div class="tabBody" id="tab-rules"></div>
+  </section>
+</main>
+
+<div id="overlay">
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="ovTitle">
+    <h2 id="ovTitle">Load a payload</h2>
+    <p class="sub">Paste JSON below or choose a file. Everything runs locally in this tab — no data is transmitted anywhere.</p>
+    <textarea id="txtMain" spellcheck="false" placeholder='{"paste": "your JSON here"}' aria-label="Primary payload JSON"></textarea>
+    <div class="panelRow">
+      <label class="fileBtn">Choose file…<input type="file" id="fileMain" accept=".json,.txt,application/json"></label>
+      <button id="btnDemo2">Load demo payload</button>
+    </div>
+    <div id="cmpWrap" class="collapsed">
+      <button id="cmpToggle" aria-expanded="false">＋ Compare against a second payload (optional)</button>
+      <textarea id="txtCmp" spellcheck="false" placeholder='Second payload for diff mode — e.g. the response to compare with the request, or an earlier bureau pull.' aria-label="Comparison payload JSON"></textarea>
+      <div class="cmpTools"><label class="fileBtn">Choose file…<input type="file" id="fileCmp" accept=".json,.txt,application/json"></label></div>
+    </div>
+    <div id="loadErr" role="alert"></div>
+    <div class="panelRow">
+      <button id="btnParse" class="primary">Analyse</button>
+      <button id="btnRepair" style="display:none" title="Fix common defects: single quotes, trailing commas, comments, unquoted keys, Python literals, NDJSON, JSONP">Attempt repair</button>
+      <button id="btnCancel">Cancel</button>
+    </div>
+    <p class="privacy">Payloads never leave the browser. Custom rule packs (rules only, never payload data) are kept in localStorage.</p>
+  </div>
+</div>
+
+<div id="dropVeil" aria-hidden="true">Drop a JSON file to analyse</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+'use strict';
+
+/* ---------------- state ---------------- */
+var ROOT=null, RAW='', NODES=[], FLAT=[], FINDINGS=[], PII=[], MASK=false;
+var _piiset=new Set();
+var PATH2EL=new Map();
+var DIFF=null;              // {added:[],removed:[],changed:[],retyped:[]} or null
+var RULES=[];               // active custom rules
+var RULE_HITS=new Map();    // rule name -> hit count from last analyse
+var SEARCH_HITS=[], SEARCH_IX=-1;
+var RULES_LS_KEY='jsonxray_rules_v1';
+var REPAIR_NOTES=[];        // what the last auto-repair changed (surfaced as an info finding)
+var SORT=false;             // sort object keys A→Z in tree + beautify/minify output
+
+var $=function(id){return document.getElementById(id);};
+
+/* ---------------- utils ---------------- */
+function esc(s){
+  return String(s).replace(/[&<>"']/g,function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+function isIdent(k){return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(k);}
+function dotPath(segs){
+  var out='$';
+  for(var i=0;i<segs.length;i++){
+    var s=segs[i];
+    if(typeof s==='number'){out+='['+s+']';}
+    else if(isIdent(s)){out+='.'+s;}
+    else{out+='["'+String(s).replace(/"/g,'\\"')+'"]';}
+  }
+  return out;
+}
+function jsonPath(segs){return dotPath(segs);}
+function typeOf(v){return v===null?'null':Array.isArray(v)?'array':typeof v;}
+function fmtBytes(n){
+  if(n<1024)return n+' B';
+  if(n<1048576)return (n/1024).toFixed(1)+' KB';
+  return (n/1048576).toFixed(2)+' MB';
+}
+function debounce(fn,ms){var t;return function(){var a=arguments,c=this;clearTimeout(t);t=setTimeout(function(){fn.apply(c,a);},ms);};}
+function displayVal(path,v,type){
+  if(MASK&&_piiset.has(path))return '<span class="masked">••••••</span>';
+  var raw=type==='string'?'"'+esc(v)+'"':esc(String(v));
+  return raw;
+}
+function plainVal(path,v){
+  if(MASK&&_piiset.has(path))return '••••••';
+  return String(v);
+}
+var _toastT=null;
+function toast(msg){
+  var t=$('toast');
+  t.textContent=msg;
+  t.classList.add('show');
+  clearTimeout(_toastT);
+  _toastT=setTimeout(function(){t.classList.remove('show');},1800);
+}
+function copyText(txt,label){
+  function done(ok){toast(ok?(label||'Copied'):'Copy failed — clipboard unavailable');}
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(function(){done(true);},function(){fallback();});
+  }else{fallback();}
+  function fallback(){
+    var ta=document.createElement('textarea');
+    ta.value=txt;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();
+    var ok=false;
+    try{ok=document.execCommand('copy');}catch(e){}
+    ta.remove();done(ok);
+  }
+}
+function download(name,text,mime){
+  var blob=new Blob([text],{type:mime||'text/plain'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=name;
+  document.body.appendChild(a);a.click();
+  setTimeout(function(){URL.revokeObjectURL(a.href);a.remove();},400);
+}
+
+/* ---------------- walk ---------------- */
+var DATE_RE=/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?\s*(Z|[+-]\d{2}:?\d{2})?)?$/;
+
+function walk(root){
+  NODES=[];FLAT=[];
+  var keyReg=new Map(), dateVals=[], maxDepth=0, idc=0;
+  var counts={objects:0,arrays:0,strings:0,numbers:0,booleans:0,nulls:0};
+  (function rec(v,segs,depth){
+    var t=typeOf(v);
+    var node={id:idc++,segs:segs.slice(),depth:depth,type:t,v:v};
+    NODES.push(node);
+    if(depth>maxDepth)maxDepth=depth;
+    var key=segs.length?segs[segs.length-1]:null;
+    if(typeof key==='string'&&key){
+      var norm=key.toLowerCase().replace(/[^a-z0-9]/g,'');
+      if(norm){
+        var e=keyReg.get(norm);
+        if(!e){e={spellings:new Set(),types:new Set(),paths:[]};keyReg.set(norm,e);}
+        e.spellings.add(key);e.types.add(t);
+        if(e.paths.length<8)e.paths.push(dotPath(segs));
+      }
+    }
+    if(t==='object'){
+      counts.objects++;
+      var ks=Object.keys(v);
+      for(var i=0;i<ks.length;i++)rec(v[ks[i]],segs.concat(ks[i]),depth+1);
+    }else if(t==='array'){
+      counts.arrays++;
+      for(var j=0;j<v.length;j++)rec(v[j],segs.concat(j),depth+1);
+    }else{
+      if(t==='string')counts.strings++;
+      else if(t==='number')counts.numbers++;
+      else if(t==='boolean')counts.booleans++;
+      else counts.nulls++;
+      var p=dotPath(segs);
+      FLAT.push({path:p,segs:segs.slice(),type:t,v:v,node:node});
+      if(t==='string'&&DATE_RE.test(v.trim()))dateVals.push({path:p,v:v.trim(),key:key});
+    }
+  })(root,[],0);
+  return {keyReg:keyReg,dateVals:dateVals,maxDepth:maxDepth,counts:counts};
+}
+
+/* ---------------- quality engine ---------------- */
+function push(sev,cat,title,desc,paths){
+  FINDINGS.push({sev:sev,cat:cat,title:title,desc:desc,paths:paths||[]});
+}
+function lastKey(f){var s=f.segs;for(var i=s.length-1;i>=0;i--){if(typeof s[i]==='string')return s[i];}return '';}
+
+function dateFormatOf(s){
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s))return 'date-only';
+  if(/Z$/.test(s))return 'UTC "Z"';
+  if(/[+-]\d{2}:\d{2}$/.test(s))return 'offset "+00:00"';
+  if(/[+-]\d{4}$/.test(s))return 'offset "+0000"';
+  return 'no timezone';
+}
+
+function analyse(meta){
+  FINDINGS=[];RULE_HITS=new Map();
+  var keyReg=meta.keyReg;
+
+  if(REPAIR_NOTES.length){
+    push('info','repair','Payload was auto-repaired before parsing',
+      'The pasted text was not valid JSON; the following fixes were applied: '+REPAIR_NOTES.join('; ')+'. The upstream producer is emitting malformed JSON — that is a defect in its own right.',[]);
+  }
+
+  /* 1. inconsistent key spellings */
+  keyReg.forEach(function(e,norm){
+    if(e.spellings.size>1){
+      push('high','naming','Inconsistent key spellings: '+Array.from(e.spellings).join(' / '),
+        'The same field name appears with '+e.spellings.size+' different spellings. Downstream mappers keyed on one spelling will silently drop the others.',
+        e.paths.slice(0,8));
+    }
+  });
+
+  /* 2. duplicate concepts */
+  var CONCEPTS=[
+    {name:'date of birth',members:['dob','dateofbirth','birthdate','birthdt']},
+    {name:'surname',members:['surname','lastname','familyname']},
+    {name:'first name',members:['firstname','forename','givenname']},
+    {name:'postcode',members:['postcode','postalcode','zipcode','zip']},
+    {name:'phone',members:['phone','phonenumber','telephone','mobile','mobilenumber']}
+  ];
+  CONCEPTS.forEach(function(c){
+    var found=[],paths=[];
+    c.members.forEach(function(m){
+      if(keyReg.has(m)){found.push(Array.from(keyReg.get(m).spellings).join('/'));paths=paths.concat(keyReg.get(m).paths.slice(0,3));}
+    });
+    if(found.length>1){
+      push('high','naming','Duplicate concept: '+c.name+' ('+found.join(' + ')+')',
+        'The payload carries the same concept under more than one field family. Consumers may read whichever happens to be populated — a classic source of decisioning drift.',
+        paths.slice(0,8));
+    }
+  });
+
+  /* 3. mixed types per key name */
+  keyReg.forEach(function(e,norm){
+    var meaningful=Array.from(e.types).filter(function(t){return t!=='null';});
+    if(meaningful.length>1){
+      push('high','types','Mixed types for key "'+Array.from(e.spellings)[0]+'": '+meaningful.join(', '),
+        'The same field name holds different JSON types in different places. Strongly-typed consumers will fail or coerce unpredictably.',
+        e.paths.slice(0,8));
+    }
+  });
+
+  /* 4. booleans stored as strings */
+  var boolStr=FLAT.filter(function(f){return f.type==='string'&&/^(true|false)$/i.test(f.v.trim());});
+  if(boolStr.length){
+    push('med','types','Booleans stored as strings ('+boolStr.length+')',
+      'Values like "true"/"false" are strings, not booleans. `if (flag)` checks on the string "false" evaluate truthy.',
+      boolStr.slice(0,8).map(function(f){return f.path;}));
+  }
+
+  /* 5. numbers stored as strings */
+  var NUMKEY_EXCL=/id$|^id|ref|phone|mobile|postcode|zip|sortcode|account|iban|code$/i;
+  var numStr=FLAT.filter(function(f){
+    return f.type==='string'&&/^-?\d+(\.\d+)?$/.test(f.v.trim())&&!NUMKEY_EXCL.test(lastKey(f))&&!DATE_RE.test(f.v.trim());
+  });
+  if(numStr.length){
+    push('med','types','Numbers stored as strings ('+numStr.length+')',
+      'Numeric-looking values arriving as strings (identifier-style keys excluded). Sums, comparisons and cut-off checks on these will misbehave.',
+      numStr.slice(0,8).map(function(f){return f.path;}));
+  }
+
+  /* 6. legacy Y/N flags */
+  var yn=FLAT.filter(function(f){return f.type==='string'&&/^[YN]$/i.test(f.v.trim());});
+  if(yn.length){
+    push('info','types','Legacy Y/N flags ('+yn.length+')',
+      'Single-character Y/N values instead of booleans — typical of mainframe-era feeds. Confirm the mapping layer normalises them.',
+      yn.slice(0,8).map(function(f){return f.path;}));
+  }
+
+  /* 7. mixed date/timestamp formats */
+  var fmts=new Map();
+  meta.dateVals.forEach(function(d){
+    var fm=dateFormatOf(d.v);
+    if(!fmts.has(fm))fmts.set(fm,[]);
+    fmts.get(fm).push(d.path);
+  });
+  if(fmts.size>1){
+    var parts=[];fmts.forEach(function(ps,fm){parts.push(fm+' ×'+ps.length);});
+    var samplePaths=[];fmts.forEach(function(ps){samplePaths.push(ps[0]);});
+    push('med','dates','Mixed date/timestamp formats: '+parts.join(', '),
+      'Timestamps use inconsistent formats across the payload. Parsers that assume one format will misread or reject the others; naive string comparison of mixed formats is broken.',
+      samplePaths.slice(0,8));
+  }
+
+  /* 8 + 9. DOB checks */
+  var dobs=meta.dateVals.filter(function(d){return /dob|dateofbirth|birth/i.test(String(d.key||'').replace(/[^a-z]/gi,''));});
+  var now=new Date();
+  var bad=[];
+  dobs.forEach(function(d){
+    var dt=new Date(d.v.slice(0,10)+'T00:00:00Z');
+    if(isNaN(dt))return;
+    var age=(now-dt)/31557600000;
+    if(dt>now)bad.push({path:d.path,why:'in the future'});
+    else if(age<18)bad.push({path:d.path,why:'implies age '+Math.floor(age)});
+  });
+  if(bad.length){
+    push('high','dob','Impossible date of birth ('+bad.length+')',
+      'Birth-date fields that are in the future or imply an applicant under 18: '+bad.map(function(b){return b.why;}).join('; ')+'. For a credit application this is a hard data defect.',
+      bad.map(function(b){return b.path;}).slice(0,8));
+  }
+  var distinct=new Map();
+  dobs.forEach(function(d){var day=d.v.slice(0,10);if(!distinct.has(day))distinct.set(day,[]);distinct.get(day).push(d.path);});
+  if(distinct.size>1){
+    var ps=[];distinct.forEach(function(v){ps.push(v[0]);});
+    push('high','dob','Conflicting dates of birth: '+Array.from(distinct.keys()).join(' vs '),
+      'Different birth-date values appear for what should be one applicant. Bureau matching and age-based rules may key on the wrong one.',
+      ps.slice(0,8));
+  }
+
+  /* 10. sentinel values */
+  var SENTINELS={'999':1,'9999':1,'99':1,'-1':1,'999999':1,'9999.99':1};
+  var sent=FLAT.filter(function(f){return f.type==='number'&&SENTINELS[String(f.v)];});
+  if(sent.length){
+    push('med','values','Sentinel values present ('+sent.length+')',
+      'Values like 999, 9999, -1 or 9999.99 usually mean "unknown/not supplied" in legacy systems, but arrive as real numbers. Averages, affordability sums and cut-offs will swallow them silently.',
+      sent.slice(0,8).map(function(f){return f.path;}));
+  }
+
+  /* 11. "Infinity" strings */
+  var inf=FLAT.filter(function(f){return f.type==='string'&&/^-?infinity$/i.test(f.v.trim());});
+  if(inf.length){
+    push('med','values','"Infinity" string literals ('+inf.length+')',
+      'JSON cannot represent Infinity, so serialisers that hit division-by-zero emit the string "Infinity". Upstream computed a nonsense ratio.',
+      inf.slice(0,8).map(function(f){return f.path;}));
+  }
+
+  /* 12. empty objects / arrays */
+  var empt=NODES.filter(function(n){
+    return (n.type==='object'&&Object.keys(n.v).length===0)||(n.type==='array'&&n.v.length===0);
+  });
+  if(empt.length){
+    push('info','structure','Empty objects/arrays ('+empt.length+')',
+      'Empty containers — often a section the upstream system failed to populate rather than genuinely "no data".',
+      empt.slice(0,8).map(function(n){return dotPath(n.segs);}));
+  }
+
+  /* 13. null density */
+  var nulls=FLAT.filter(function(f){return f.type==='null';});
+  if(nulls.length>3){
+    push('info','structure','High null density ('+nulls.length+' nulls)',
+      'A large number of null leaves. Check whether these are expected optionals or an upstream mapping dropping data.',
+      nulls.slice(0,8).map(function(f){return f.path;}));
+  }
+
+  /* 14. leading/trailing whitespace */
+  var ws=FLAT.filter(function(f){return f.type==='string'&&f.v!==f.v.trim()&&f.v.trim()!=='';});
+  if(ws.length){
+    push('med','values','Leading/trailing whitespace in strings ('+ws.length+')',
+      'Padded strings break exact-match joins, dedupe and reference lookups. The padding is invisible in most viewers — but not here.',
+      ws.slice(0,8).map(function(f){return f.path;}));
+  }
+
+  /* custom rule packs */
+  RULES.forEach(function(r){
+    var hits=[];
+    var kre=null,vre=null,pre=null;
+    try{
+      if(r.match&&r.match.keyRegex)kre=new RegExp(r.match.keyRegex,'i');
+      if(r.match&&r.match.valueRegex)vre=new RegExp(r.match.valueRegex,'i');
+      if(r.match&&r.match.pathRegex)pre=new RegExp(r.match.pathRegex,'i');
+    }catch(e){
+      push('info','custom','Rule "'+r.name+'" has an invalid regex','The rule was skipped: '+e.message,[]);
+      return;
+    }
+    FLAT.forEach(function(f){
+      if(r.match&&r.match.type&&f.type!==r.match.type)return;
+      if(kre&&!kre.test(lastKey(f)))return;
+      if(pre&&!pre.test(f.path))return;
+      if(vre){
+        var sv=String(f.v);
+        var matched=vre.test(sv);
+        if(r.match.negate?matched:!matched)return;
+      }else if(!kre&&!pre){return;}
+      hits.push(f.path);
+    });
+    RULE_HITS.set(r.name,hits.length);
+    if(hits.length){
+      push(r.severity==='high'||r.severity==='med'||r.severity==='info'?r.severity:'med','custom',
+        r.name+' ('+hits.length+')',r.message||'Matched by custom rule.',hits.slice(0,10));
+    }
+  });
+
+  var order={high:0,med:1,info:2};
+  FINDINGS.sort(function(a,b){return order[a.sev]-order[b.sev];});
+}
+
+/* ---------------- PII scanner ---------------- */
+var RE_EMAIL=/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/;
+var RE_UKPHONE=/(?:\+44\s?\d{4}|\(?0\d{4}\)?)\s?\d{3}\s?\d{3}\b|(?:\+44\s?\d{3}|\(?0\d{3}\)?)\s?\d{3}\s?\d{4}\b/;
+var RE_POSTCODE=/\b[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}\b/i;
+var RE_SORTCODE=/^\d{2}-\d{2}-\d{2}$/;
+
+function scanPII(){
+  PII=[];_piiset=new Set();
+  function add(kind,path,value,note){
+    PII.push({kind:kind,path:path,value:String(value),note:note||''});
+    _piiset.add(path);
+  }
+  FLAT.forEach(function(f){
+    var k=lastKey(f),v=f.v;
+    var kl=k.toLowerCase().replace(/[^a-z]/g,'');
+    if(f.type==='string'){
+      if(RE_EMAIL.test(v)){add('Email',f.path,v,'value pattern');return;}
+      if(RE_UKPHONE.test(v)||(/phone|mobile|tel/.test(kl)&&/\d{6,}/.test(v))){add('Phone (UK)',f.path,v,'value/key pattern');return;}
+      if(RE_POSTCODE.test(v)&&/post|zip|address/.test(kl)){add('Postcode',f.path,v,'key + pattern');return;}
+      if(RE_POSTCODE.test(v)&&/^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i.test(v.trim())){add('Postcode',f.path,v,'exact pattern');return;}
+      if(/dob|dateofbirth|birth/.test(kl)&&DATE_RE.test(v.trim())){add('Date of birth',f.path,v,'birth-named key');return;}
+      if(RE_SORTCODE.test(v.trim())||/sortcode/.test(kl)){add('Account number',f.path,v,'sort code');return;}
+      if(/accountnumber|accountno|iban|bankaccount/.test(kl)){add('Account number',f.path,v,'key name');return;}
+      if(/^(first|last|sur|middle|given|family|full)name$|^forename$/.test(kl)){add('Name',f.path,v,'key name');return;}
+      if(/addressline|^address$|^street$|^line\d$|^town$|^city$/.test(kl)&&v.trim()){add('Address',f.path,v,'key name');return;}
+      if(/reference|applicationid|caseid|customerid|clientref/.test(kl)){add('Reference ID',f.path,v,'key name');return;}
+    }else if(f.type==='number'){
+      if(/income|salary|earnings/.test(kl)){add('Income',f.path,v,'key name');return;}
+      if(/accountnumber|accountno/.test(kl)){add('Account number',f.path,v,'key name');return;}
+    }
+  });
+}
+
+/* ---------------- diff engine ---------------- */
+function flattenTo(map,v,segs){
+  var t=typeOf(v);
+  if(t==='object'){
+    var ks=Object.keys(v);
+    if(ks.length===0){map.set(dotPath(segs)+'',{type:'object',v:'{}'});return;}
+    for(var i=0;i<ks.length;i++)flattenTo(map,v[ks[i]],segs.concat(ks[i]));
+  }else if(t==='array'){
+    if(v.length===0){map.set(dotPath(segs),{type:'array',v:'[]'});return;}
+    for(var j=0;j<v.length;j++)flattenTo(map,v[j],segs.concat(j));
+  }else{
+    map.set(dotPath(segs),{type:t,v:v});
+  }
+}
+function computeDiff(a,b){
+  var ma=new Map(),mb=new Map();
+  flattenTo(ma,a,[]);flattenTo(mb,b,[]);
+  var added=[],removed=[],changed=[],retyped=[];
+  ma.forEach(function(ea,p){
+    if(!mb.has(p)){removed.push({path:p,a:ea});return;}
+    var eb=mb.get(p);
+    if(ea.type!==eb.type)retyped.push({path:p,a:ea,b:eb});
+    else if(String(ea.v)!==String(eb.v))changed.push({path:p,a:ea,b:eb});
+  });
+  mb.forEach(function(eb,p){
+    if(!ma.has(p))added.push({path:p,b:eb});
+  });
+  return {added:added,removed:removed,changed:changed,retyped:retyped,
+          total:added.length+removed.length+changed.length+retyped.length};
+}
+
+/* ---------------- repair engine ---------------- */
+/* Fixes the malformed-JSON defects QA actually pastes: smart quotes, JSONP
+   wrappers, comments, single quotes, unquoted keys, trailing commas,
+   Python/JS literals, NDJSON. Returns {text, notes[]}; caller re-parses. */
+function repairJSON(src){
+  var notes=[];
+  var txt=src;
+
+  if(txt.charCodeAt(0)===0xFEFF){txt=txt.slice(1);note('removed byte-order mark');}
+  if(/[“”‘’]/.test(txt)){
+    txt=txt.replace(/[“”]/g,'"').replace(/[‘’]/g,"'");
+    note('replaced smart quotes with straight quotes');
+  }
+  var jsonp=txt.match(/^\s*[\w$.]+\s*\(([\s\S]*)\)\s*;?\s*$/);
+  if(jsonp&&!/^[\s]*[[{]/.test(txt)){txt=jsonp[1];note('stripped JSONP wrapper');}
+
+  txt=scanFix(txt);
+
+  // NDJSON / JSONL: every non-empty line parses on its own -> wrap as array
+  if(!parses(txt)){
+    var lines=txt.split(/\r?\n/).map(function(l){return l.trim();}).filter(Boolean);
+    if(lines.length>1&&lines.every(parses)){
+      txt='['+lines.join(',')+']';
+      note('wrapped '+lines.length+' NDJSON/JSONL lines as an array');
+    }
+  }
+  return {text:txt,notes:notes};
+
+  function parses(s){try{JSON.parse(s);return true;}catch(e){return false;}}
+  function note(m){if(notes.indexOf(m)<0)notes.push(m);}
+
+  /* single char-scan, string-aware: comments, single quotes, unquoted keys,
+     trailing commas, bare literals */
+  function scanFix(s){
+    var out='',i=0,n=s.length;
+    while(i<n){
+      var c=s[i];
+      if(c==='"'){                                  // double-quoted string: copy verbatim
+        var j=i+1;out+=c;
+        while(j<n){out+=s[j];if(s[j]==='\\'){out+=s[j+1]||'';j+=2;continue;}if(s[j]==='"'){j++;break;}j++;}
+        i=j;continue;
+      }
+      if(c==="'"){                                  // single-quoted string -> double
+        var k=i+1,buf='';
+        while(k<n){
+          if(s[k]==='\\'){buf+=s[k]+(s[k+1]||'');k+=2;continue;}
+          if(s[k]==="'")break;
+          buf+=s[k];k++;
+        }
+        out+='"'+buf.replace(/\\'/g,"'").replace(/"/g,'\\"')+'"';
+        i=k+1;note('converted single-quoted strings to double quotes');continue;
+      }
+      if(c==='/'&&s[i+1]==='/'){                    // line comment
+        while(i<n&&s[i]!=='\n')i++;
+        note('stripped comments');continue;
+      }
+      if(c==='/'&&s[i+1]==='*'){                    // block comment
+        i+=2;while(i<n&&!(s[i]==='*'&&s[i+1]==='/'))i++;
+        i+=2;note('stripped comments');continue;
+      }
+      if(c===','){                                  // trailing comma?
+        var m=i+1;while(m<n&&/\s/.test(s[m]))m++;
+        if(s[m]==='}'||s[m]===']'){i++;note('removed trailing commas');continue;}
+        out+=c;i++;continue;
+      }
+      if(/[A-Za-z_$]/.test(c)){                     // bare word: literal or unquoted key
+        var w=i;while(w<n&&/[\w$]/.test(s[w]))w++;
+        var word=s.slice(i,w);
+        var LIT={'True':'true','False':'false','None':'null','NULL':'null','Null':'null','undefined':'null','NaN':'"NaN"','Infinity':'"Infinity"'};
+        var m2=w;while(m2<n&&/\s/.test(s[m2]))m2++;
+        if(s[m2]===':'){                            // it is a key
+          out+='"'+word+'"';i=w;note('quoted unquoted keys');continue;
+        }
+        if(LIT[word]){out+=LIT[word];i=w;note('normalised '+word+' literal');continue;}
+        out+=word;i=w;continue;
+      }
+      out+=c;i++;
+    }
+    return out;
+  }
+}
+
+/* ---------------- JSONPath query engine (subset) ---------------- */
+/* Supports: $  .key  ["key"]  [n]  [*]  .*  ..key  [?(@.path)]
+   [?(@.path op literal)] with op in == != >= <= > <          */
+function runQuery(expr,root){
+  var toks=tokenizeQuery(expr);
+  var set=[{v:root,segs:[]}];
+  toks.forEach(function(t){
+    var next=[];
+    set.forEach(function(item){
+      var v=item.v;
+      if(t.k==='key'){
+        if(typeOf(v)==='object'&&Object.prototype.hasOwnProperty.call(v,t.name))next.push({v:v[t.name],segs:item.segs.concat(t.name)});
+      }else if(t.k==='index'){
+        if(Array.isArray(v)&&t.n>=0&&t.n<v.length)next.push({v:v[t.n],segs:item.segs.concat(t.n)});
+        else if(Array.isArray(v)&&t.n<0&&v.length+t.n>=0)next.push({v:v[v.length+t.n],segs:item.segs.concat(v.length+t.n)});
+      }else if(t.k==='wild'){
+        if(Array.isArray(v))v.forEach(function(c,ix){next.push({v:c,segs:item.segs.concat(ix)});});
+        else if(typeOf(v)==='object')Object.keys(v).forEach(function(kk){next.push({v:v[kk],segs:item.segs.concat(kk)});});
+      }else if(t.k==='deep'){
+        (function dig(val,segs){
+          if(typeOf(val)==='object'){
+            Object.keys(val).forEach(function(kk){
+              if(kk===t.name)next.push({v:val[kk],segs:segs.concat(kk)});
+              dig(val[kk],segs.concat(kk));
+            });
+          }else if(Array.isArray(val)){
+            val.forEach(function(c,ix){dig(c,segs.concat(ix));});
+          }
+        })(v,item.segs);
+      }else if(t.k==='filter'){
+        var arr=Array.isArray(v)?v.map(function(c,ix){return {v:c,segs:item.segs.concat(ix)};})
+               :typeOf(v)==='object'?Object.keys(v).map(function(kk){return {v:v[kk],segs:item.segs.concat(kk)};}):[];
+        arr.forEach(function(cand){
+          var lhs=cand.v;
+          for(var d=0;d<t.path.length;d++){
+            if(lhs&&typeof lhs==='object'&&!Array.isArray(lhs)&&Object.prototype.hasOwnProperty.call(lhs,t.path[d]))lhs=lhs[t.path[d]];
+            else{lhs=undefined;break;}
+          }
+          var pass;
+          if(!t.op)pass=lhs!==undefined;
+          else{
+            if(lhs===undefined)pass=false;
+            else switch(t.op){
+              case '==':pass=lhs===t.rhs||String(lhs)===String(t.rhs);break;
+              case '!=':pass=lhs!==t.rhs&&String(lhs)!==String(t.rhs);break;
+              case '>':pass=Number(lhs)>Number(t.rhs);break;
+              case '>=':pass=Number(lhs)>=Number(t.rhs);break;
+              case '<':pass=Number(lhs)<Number(t.rhs);break;
+              case '<=':pass=Number(lhs)<=Number(t.rhs);break;
+              default:pass=false;
+            }
+          }
+          if(pass)next.push(cand);
+        });
+      }
+    });
+    set=next;
+  });
+  return set;
+}
+function tokenizeQuery(expr){
+  var s=expr.trim();
+  if(s[0]!=='$')throw new Error('Query must start with $');
+  var i=1,toks=[];
+  while(i<s.length){
+    if(s[i]==='.'&&s[i+1]==='.'){
+      i+=2;var m=s.slice(i).match(/^[\w$][\w$]*/);
+      if(!m)throw new Error('".." must be followed by a key name');
+      toks.push({k:'deep',name:m[0]});i+=m[0].length;
+    }else if(s[i]==='.'){
+      i++;
+      if(s[i]==='*'){toks.push({k:'wild'});i++;continue;}
+      var m2=s.slice(i).match(/^[\w$][\w$]*/);
+      if(!m2)throw new Error('"." must be followed by a key name or *');
+      toks.push({k:'key',name:m2[0]});i+=m2[0].length;
+    }else if(s[i]==='['){
+      var close=findClose(s,i);
+      var inner=s.slice(i+1,close).trim();
+      if(inner==='*')toks.push({k:'wild'});
+      else if(/^-?\d+$/.test(inner))toks.push({k:'index',n:Number(inner)});
+      else if(/^"(.*)"$/.test(inner)||/^'(.*)'$/.test(inner))toks.push({k:'key',name:inner.slice(1,-1)});
+      else if(/^\?\(/.test(inner)){
+        var f=inner.slice(2,-1).trim();
+        var fm=f.match(/^@((?:\.[\w$]+)+)\s*(==|!=|>=|<=|>|<)?\s*(.*)$/);
+        if(!fm)throw new Error('Unsupported filter: '+inner);
+        var path=fm[1].split('.').filter(Boolean);
+        var tok={k:'filter',path:path,op:fm[2]||null,rhs:null};
+        if(tok.op){
+          var lit=fm[3].trim();
+          if(/^'(.*)'$/.test(lit)||/^"(.*)"$/.test(lit))tok.rhs=lit.slice(1,-1);
+          else if(lit==='true')tok.rhs=true;
+          else if(lit==='false')tok.rhs=false;
+          else if(lit==='null')tok.rhs=null;
+          else if(/^-?\d+(\.\d+)?$/.test(lit))tok.rhs=Number(lit);
+          else throw new Error('Unsupported literal: '+lit);
+        }
+        toks.push(tok);
+      }
+      else throw new Error('Unsupported bracket segment: ['+inner+']');
+      i=close+1;
+    }else throw new Error('Unexpected character "'+s[i]+'" at position '+i);
+  }
+  return toks;
+  function findClose(str,from){
+    var depth=0;
+    for(var p=from;p<str.length;p++){
+      if(str[p]==='[')depth++;
+      else if(str[p]===']'){depth--;if(depth===0)return p;}
+    }
+    throw new Error('Unbalanced [');
+  }
+}
+
+/* ---------------- schema inference (draft-07) ---------------- */
+/* Enums come from low-cardinality string fields; fields with detected PII
+   never contribute enum values (schemas get pasted into tickets). */
+function inferSchema(root){
+  var s=infer(root,[]);
+  s.$schema='http://json-schema.org/draft-07/schema#';
+  return s;
+
+  function fmtHint(v){
+    if(/^\d{4}-\d{2}-\d{2}$/.test(v))return 'date';
+    if(DATE_RE.test(v)&&/[T ]/.test(v))return 'date-time';
+    if(RE_EMAIL.test(v)&&v.indexOf(' ')<0)return 'email';
+    return null;
+  }
+  function infer(v,segs){
+    var t=typeOf(v);
+    if(t==='object'){
+      var props={},req=[];
+      Object.keys(v).forEach(function(k){props[k]=infer(v[k],segs.concat(k));req.push(k);});
+      var o={type:'object',properties:props};
+      if(req.length)o.required=req;
+      return o;
+    }
+    if(t==='array'){
+      if(!v.length)return {type:'array',items:{}};
+      var merged=null;
+      for(var i=0;i<v.length;i++)merged=merge(merged,infer(v[i],segs.concat(i)));
+      // enum for low-cardinality string arrays / homogeneous string items
+      if(merged&&merged.type==='string'){
+        var vals=[],pii=false;
+        for(var j=0;j<v.length;j++){
+          if(typeof v[j]!=='string'){vals=null;break;}
+          if(_piiset.has(dotPath(segs.concat(j))))pii=true;
+          if(vals.indexOf(v[j])<0)vals.push(v[j]);
+        }
+        if(vals&&!pii&&v.length>=3&&vals.length<=8)merged.enum=vals.sort();
+      }
+      return {type:'array',items:merged||{}};
+    }
+    if(t==='string'){
+      var o2={type:'string'};
+      var f=fmtHint(v);
+      if(f)o2.format=f;
+      return o2;
+    }
+    if(t==='number')return {type:Number.isInteger(v)?'integer':'number'};
+    if(t==='boolean')return {type:'boolean'};
+    return {type:'null'};
+  }
+  function merge(a,b){
+    if(!a)return b;
+    if(!b)return a;
+    if(a.type===b.type){
+      if(a.type==='object'){
+        var props={},req=[];
+        var keys={};
+        Object.keys(a.properties||{}).forEach(function(k){keys[k]=1;});
+        Object.keys(b.properties||{}).forEach(function(k){keys[k]=1;});
+        Object.keys(keys).forEach(function(k){
+          props[k]=merge((a.properties||{})[k],(b.properties||{})[k]);
+        });
+        // required = present in ALL siblings
+        (a.required||[]).forEach(function(k){if((b.required||[]).indexOf(k)>=0)req.push(k);});
+        var o={type:'object',properties:props};
+        if(req.length)o.required=req;
+        return o;
+      }
+      if(a.type==='array')return {type:'array',items:merge(a.items,b.items)};
+      var out={type:a.type};
+      if(a.format&&a.format===b.format)out.format=a.format;
+      return out;
+    }
+    if((a.type==='integer'&&b.type==='number')||(a.type==='number'&&b.type==='integer'))return {type:'number'};
+    var types=[].concat(a.type,b.type).filter(function(x,ix,arr){return arr.indexOf(x)===ix;});
+    return {type:types};
+  }
+}
+
+/* ---------------- tree render ---------------- */
+function renderTree(){
+  var el=$('tree');
+  PATH2EL=new Map();
+  if(!ROOT){el.innerHTML='<div class="empty">Load a payload to begin.</div>';return;}
+  var frag=document.createDocumentFragment();
+  frag.appendChild(buildNode(ROOT,[],0,null));
+  el.innerHTML='';
+  el.appendChild(frag);
+}
+function buildNode(v,segs,depth,keyLabel){
+  var t=typeOf(v);
+  var path=dotPath(segs);
+  var wrap=document.createElement('div');
+  wrap.className='node';
+  wrap.dataset.path=path;
+  PATH2EL.set(path,wrap);
+  var row=document.createElement('span');
+  row.className='row';
+  var isC=t==='object'||t==='array';
+  var kids=isC?(t==='array'?v.length:Object.keys(v).length):0;
+  var collapsed=isC&&kids>0&&(depth>=3||kids>60);
+  if(collapsed)wrap.classList.add('closed');
+
+  var html='';
+  if(isC&&kids>0){html+='<span class="twist" role="button" tabindex="0" aria-label="Toggle">'+ (collapsed?'▸':'▾') +'</span>';}
+  else{html+='<span class="twist leafPad"> </span>';}
+  if(keyLabel!==null){
+    if(typeof keyLabel==='number')html+='<span class="idx">['+keyLabel+']</span><span class="punct">:</span> ';
+    else html+='<span class="key">'+esc(keyLabel)+'</span><span class="punct">:</span> ';
+  }
+  if(t==='object')html+='<span class="punct">{…}</span><span class="meta">'+kids+' key'+(kids===1?'':'s')+'</span>';
+  else if(t==='array')html+='<span class="punct">[…]</span><span class="meta">'+kids+' item'+(kids===1?'':'s')+'</span>';
+  else html+='<span class="val '+t+'" title="'+esc(path)+'">'+displayVal(path,v,t)+'</span>';
+  row.innerHTML=html;
+  if(_piiset.has(path))row.classList.add('piiRow');
+  wrap.appendChild(row);
+
+  if(isC&&kids>0){
+    var kc=document.createElement('div');
+    kc.className='kids';
+    if(t==='array'){
+      for(var i=0;i<v.length;i++)kc.appendChild(buildNode(v[i],segs.concat(i),depth+1,i));
+    }else{
+      var ks=Object.keys(v);
+      if(SORT)ks.sort();
+      for(var j=0;j<ks.length;j++)kc.appendChild(buildNode(v[ks[j]],segs.concat(ks[j]),depth+1,ks[j]));
+    }
+    wrap.appendChild(kc);
+  }
+  return wrap;
+}
+$('tree').addEventListener('click',function(e){
+  var tw=e.target.closest('.twist');
+  if(tw&&!tw.classList.contains('leafPad')){
+    var node=tw.closest('.node');
+    node.classList.toggle('closed');
+    tw.textContent=node.classList.contains('closed')?'▸':'▾';
+    return;
+  }
+  var key=e.target.closest('.key,.idx');
+  if(key){
+    var n1=key.closest('.node');
+    if(n1)copyText(n1.dataset.path,'Path copied');
+    return;
+  }
+  var val=e.target.closest('.val');
+  if(val){
+    var n2=val.closest('.node');
+    if(n2){
+      if(MASK&&_piiset.has(n2.dataset.path)){toast('Value is masked — unmask to copy');return;}
+      copyText(val.textContent.replace(/^"|"$/g,''),'Value copied');
+    }
+  }
+});
+$('tree').addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&e.target.classList&&e.target.classList.contains('twist')){e.target.click();e.preventDefault();}
+});
+
+function jumpTo(path){
+  var el=PATH2EL.get(path);
+  if(!el){
+    // path may be an ancestor form; try trimming
+    return;
+  }
+  var p=el.parentElement;
+  while(p&&p.id!=='tree'){
+    if(p.classList.contains('node')&&p.classList.contains('closed')){
+      p.classList.remove('closed');
+      var tw=p.querySelector(':scope > .row .twist');
+      if(tw)tw.textContent='▾';
+    }
+    p=p.parentElement;
+  }
+  if(el.classList.contains('closed')){
+    el.classList.remove('closed');
+    var t2=el.querySelector(':scope > .row .twist');
+    if(t2)t2.textContent='▾';
+  }
+  el.scrollIntoView({block:'center',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+  var row=el.querySelector(':scope > .row');
+  if(row){
+    document.querySelectorAll('.row.hit').forEach(function(r){r.classList.remove('hit');});
+    row.classList.add('hit');
+  }
+}
+document.addEventListener('click',function(e){
+  var j=e.target.closest('[data-jump]');
+  if(j){jumpTo(j.dataset.jump);}
+});
+
+/* ---------------- scan strip ---------------- */
+function renderStrip(){
+  var s=$('strip');
+  if(!ROOT){s.innerHTML='<span class="chip">no payload loaded</span>';return;}
+  var hi=FINDINGS.filter(function(f){return f.sev==='high';}).length;
+  var md=FINDINGS.filter(function(f){return f.sev==='med';}).length;
+  var nf=FINDINGS.filter(function(f){return f.sev==='info';}).length;
+  var h='';
+  h+='<span class="chip"><b>'+NODES.length.toLocaleString('en-GB')+'</b> nodes</span>';
+  h+='<span class="chip"><b>'+fmtBytes(RAW.length)+'</b> minified</span>';
+  h+='<span class="chip click '+(hi?'high':'')+'" data-tabjump="quality"><b>'+hi+'</b> critical</span>';
+  h+='<span class="chip click '+(md?'med':'')+'" data-tabjump="quality"><b>'+md+'</b> warnings</span>';
+  h+='<span class="chip click '+(nf?'info':'')+'" data-tabjump="quality"><b>'+nf+'</b> info</span>';
+  h+='<span class="chip click '+(PII.length?'pii':'')+'" data-tabjump="pii"><b>'+PII.length+'</b> PII</span>';
+  if(DIFF)h+='<span class="chip click diff" data-tabjump="diff"><b>'+DIFF.total+'</b> diffs</span>';
+  s.innerHTML=h;
+}
+$('strip').addEventListener('click',function(e){
+  var c=e.target.closest('[data-tabjump]');
+  if(c)switchTab(c.dataset.tabjump);
+});
+
+/* ---------------- insights tab ---------------- */
+function renderInsights(){
+  var el=$('tab-insights');
+  if(!ROOT){el.innerHTML='<div class="empty">Load a payload to see structure insights.</div>';return;}
+  var c=window.__meta.counts;
+  var h='<div class="grid">';
+  h+='<div class="stat"><b>'+fmtBytes(RAW.length)+'</b><span>minified size</span></div>';
+  h+='<div class="stat"><b>'+NODES.length.toLocaleString('en-GB')+'</b><span>total nodes</span></div>';
+  h+='<div class="stat"><b>'+window.__meta.maxDepth+'</b><span>max depth</span></div>';
+  h+='<div class="stat"><b>'+c.objects.toLocaleString('en-GB')+'</b><span>objects</span></div>';
+  h+='<div class="stat"><b>'+c.arrays.toLocaleString('en-GB')+'</b><span>arrays</span></div>';
+  h+='<div class="stat"><b>'+c.strings.toLocaleString('en-GB')+'</b><span>strings</span></div>';
+  h+='<div class="stat"><b>'+c.numbers.toLocaleString('en-GB')+'</b><span>numbers</span></div>';
+  h+='<div class="stat"><b>'+c.booleans.toLocaleString('en-GB')+'</b><span>booleans</span></div>';
+  h+='<div class="stat"><b>'+c.nulls.toLocaleString('en-GB')+'</b><span>nulls</span></div>';
+  h+='</div>';
+
+  var biggest=NODES.filter(function(n){return n.type==='array';})
+    .sort(function(a,b){return b.v.length-a.v.length;}).slice(0,5)
+    .filter(function(n){return n.v.length>0;});
+  if(biggest.length){
+    h+='<h3 class="sect">Largest arrays</h3><table><tr><th class="mono">path</th><th>items</th></tr>';
+    biggest.forEach(function(n){
+      var p=dotPath(n.segs);
+      h+='<tr><td class="mono"><button class="pathLink" data-jump="'+esc(p)+'">'+esc(p)+'</button></td><td>'+n.v.length+'</td></tr>';
+    });
+    h+='</table>';
+  }
+  var freq=[];
+  window.__meta.keyReg.forEach(function(e,norm){
+    freq.push({k:Array.from(e.spellings)[0],n:e.paths.length,sp:e.spellings.size});
+  });
+  freq.sort(function(a,b){return b.n-a.n;});
+  h+='<h3 class="sect">Most frequent keys</h3><table><tr><th>key</th><th>seen at (sample count)</th><th>spellings</th></tr>';
+  freq.slice(0,10).forEach(function(f){
+    h+='<tr><td class="mono">'+esc(f.k)+'</td><td>'+f.n+'</td><td>'+(f.sp>1?'<span class="sev high">'+f.sp+'</span>':f.sp)+'</td></tr>';
+  });
+  h+='</table>';
+
+  var schemaTxt='';
+  try{schemaTxt=JSON.stringify(inferSchema(ROOT),null,2);}catch(e){schemaTxt='';}
+  if(schemaTxt){
+    h+='<h3 class="sect">Inferred JSON Schema (draft-07)</h3>';
+    h+='<div style="display:flex;gap:8px;margin-bottom:8px">';
+    h+='<button id="btnSchemaCopy">Copy schema</button>';
+    h+='<button id="btnSchemaDl">Download schema</button></div>';
+    h+='<p class="note" style="margin-bottom:8px">Types + required (keys present in all array siblings), enums for low-cardinality strings, format hints. Fields with detected PII never contribute enum values.</p>';
+    h+='<details class="schemaWrap"><summary>Show schema</summary><pre id="schemaPre">'+esc(schemaTxt)+'</pre></details>';
+  }
+  el.innerHTML=h;
+  if(schemaTxt){
+    $('btnSchemaCopy').addEventListener('click',function(){copyText(schemaTxt,'Schema copied');});
+    $('btnSchemaDl').addEventListener('click',function(){download('payload-schema.json',schemaTxt,'application/json');});
+  }
+}
+
+/* ---------------- quality tab ---------------- */
+function renderQuality(){
+  var el=$('tab-quality');
+  $('nQuality').textContent=FINDINGS.length;
+  if(!ROOT){el.innerHTML='<div class="empty">Load a payload to run the quality engine.</div>';return;}
+  if(!FINDINGS.length){el.innerHTML='<div class="empty">✔ No findings — the payload passed every enabled detector.</div>';return;}
+  var h='';
+  FINDINGS.forEach(function(f){
+    h+='<div class="finding '+f.sev+(f.cat==='custom'?' custom':'')+'">';
+    h+='<h4><span class="sev '+f.sev+'">'+(f.sev==='high'?'critical':f.sev==='med'?'warning':'info')+'</span>'+esc(f.title)+(f.cat==='custom'?' <span class="meta">custom rule</span>':'')+'</h4>';
+    h+='<p>'+esc(f.desc)+'</p>';
+    if(f.paths.length){
+      h+='<div class="paths">';
+      f.paths.forEach(function(p){h+='<button class="pathLink" data-jump="'+esc(p)+'">'+esc(p)+'</button>';});
+      h+='</div>';
+    }
+    h+='</div>';
+  });
+  el.innerHTML=h;
+}
+
+/* ---------------- PII tab ---------------- */
+function renderPII(){
+  var el=$('tab-pii');
+  $('nPii').textContent=PII.length;
+  if(!ROOT){el.innerHTML='<div class="empty">Load a payload to scan for personal data.</div>';return;}
+  if(!PII.length){el.innerHTML='<div class="empty">No personal data detected by the heuristics. (Absence of detection is not proof of absence.)</div>';return;}
+  var h='<p class="note" style="margin-bottom:10px">Heuristic detection — key names + value patterns. Toggle <b>Mask PII</b> in the header to hide these values everywhere (tree, tables, CSV, report).</p>';
+  h+='<table><tr><th>kind</th><th class="mono">path</th><th class="mono">value</th><th>detected by</th></tr>';
+  PII.forEach(function(p){
+    h+='<tr><td><span class="sev" style="background:var(--pii-soft);color:var(--pii)">'+esc(p.kind)+'</span></td>';
+    h+='<td class="mono"><button class="pathLink" data-jump="'+esc(p.path)+'">'+esc(p.path)+'</button></td>';
+    h+='<td class="mono">'+(MASK?'<span class="masked">••••••</span>':esc(p.value))+'</td>';
+    h+='<td>'+esc(p.note)+'</td></tr>';
+  });
+  h+='</table>';
+  el.innerHTML=h;
+}
+
+/* ---------------- flatten tab ---------------- */
+var flatFilter='';
+function renderFlatten(){
+  var el=$('tab-flatten');
+  if(!ROOT){el.innerHTML='<div class="empty">Load a payload to see the flattened leaf table.</div>';return;}
+  var rows=FLAT;
+  if(flatFilter){
+    var q=flatFilter.toLowerCase();
+    rows=FLAT.filter(function(f){return f.path.toLowerCase().indexOf(q)>=0||String(f.v).toLowerCase().indexOf(q)>=0;});
+  }
+  var h='<div style="display:flex;gap:8px;margin-bottom:10px;align-items:center">';
+  h+='<input type="text" id="flatQ" placeholder="Filter path or value…" value="'+esc(flatFilter)+'" style="flex:1">';
+  h+='<span class="note">'+rows.length.toLocaleString('en-GB')+' / '+FLAT.length.toLocaleString('en-GB')+' leaves</span></div>';
+  h+='<table><tr><th class="mono">path</th><th>type</th><th class="mono">value</th></tr>';
+  rows.slice(0,2000).forEach(function(f){
+    h+='<tr><td class="mono"><button class="pathLink" data-jump="'+esc(f.path)+'">'+esc(f.path)+'</button></td>';
+    h+='<td>'+f.type+'</td><td class="mono">'+displayVal(f.path,f.v,f.type)+'</td></tr>';
+  });
+  h+='</table>';
+  if(rows.length>2000)h+='<p class="note" style="margin-top:8px">Showing first 2,000 rows — refine the filter or use CSV export for the full set.</p>';
+  el.innerHTML=h;
+  var q=$('flatQ');
+  q.addEventListener('input',debounce(function(){
+    flatFilter=q.value;
+    var pos=q.selectionStart;
+    renderFlatten();
+    var q2=$('flatQ');q2.focus();q2.setSelectionRange(pos,pos);
+  },250));
+}
+
+/* ---------------- query tab ---------------- */
+var lastQuery='';
+function renderQuery(){
+  var el=$('tab-query');
+  if(!ROOT){el.innerHTML='<div class="empty">Load a payload to query it.</div>';return;}
+  var h='<div style="display:flex;gap:8px;margin-bottom:6px">';
+  h+='<input type="text" id="qInput" placeholder="$.applicant.address.postcode   ·   $..score   ·   $.items[*].id   ·   $.cases[?(@.type==&quot;AFR&quot;)]" value="'+esc(lastQuery)+'">';
+  h+='<button id="qRun" class="primary">Run</button></div>';
+  h+='<p class="note" style="margin-bottom:10px">JSONPath subset: <code>$.key</code> · <code>["key"]</code> · <code>[0]</code> / <code>[-1]</code> · <code>[*]</code> / <code>.*</code> · <code>..key</code> (deep scan) · <code>[?(@.path)]</code> existence · <code>[?(@.path op value)]</code> with <code>== != &gt; &gt;= &lt; &lt;=</code></p>';
+  h+='<div id="qOut"></div>';
+  el.innerHTML=h;
+  function run(){
+    lastQuery=$('qInput').value.trim();
+    var out=$('qOut');
+    if(!lastQuery){out.innerHTML='';return;}
+    var res;
+    try{res=runQuery(lastQuery,ROOT);}
+    catch(e){out.innerHTML='<div class="qErr">'+esc(e.message)+'</div>';return;}
+    if(!res.length){out.innerHTML='<div class="empty">No matches.</div>';return;}
+    var hh='<p class="note" style="margin-bottom:8px"><b>'+res.length+'</b> match'+(res.length===1?'':'es')+'</p>';
+    hh+='<table><tr><th class="mono">path</th><th>type</th><th class="mono">value</th></tr>';
+    res.slice(0,1000).forEach(function(r){
+      var p=dotPath(r.segs),t=typeOf(r.v);
+      var shown=t==='object'?'{…} '+Object.keys(r.v).length+' keys':t==='array'?'[…] '+r.v.length+' items':displayVal(p,r.v,t);
+      hh+='<tr><td class="mono"><button class="pathLink" data-jump="'+esc(p)+'">'+esc(p)+'</button></td><td>'+t+'</td><td class="mono">'+shown+'</td></tr>';
+    });
+    hh+='</table>';
+    if(res.length>1000)hh+='<p class="note" style="margin-top:8px">Showing first 1,000 matches.</p>';
+    out.innerHTML=hh;
+  }
+  $('qRun').addEventListener('click',run);
+  $('qInput').addEventListener('keydown',function(e){if(e.key==='Enter')run();});
+  if(lastQuery)run();
+}
+
+/* ---------------- diff tab ---------------- */
+function renderDiff(){
+  var el=$('tab-diff');
+  $('nDiff').textContent=DIFF?DIFF.total:'–';
+  if(!DIFF){
+    el.innerHTML='<div class="empty">No comparison payload loaded.<br><br>Use <b>Load payload → Compare against a second payload</b> to diff two extracts — e.g. request vs response, or two bureau pulls.</div>';
+    return;
+  }
+  var h='<div class="grid">';
+  h+='<div class="stat"><b style="color:var(--add)">'+DIFF.added.length+'</b><span>added paths</span></div>';
+  h+='<div class="stat"><b style="color:var(--rem)">'+DIFF.removed.length+'</b><span>removed paths</span></div>';
+  h+='<div class="stat"><b style="color:var(--chg)">'+DIFF.changed.length+'</b><span>changed values</span></div>';
+  h+='<div class="stat"><b style="color:var(--typ)">'+DIFF.retyped.length+'</b><span>changed types</span></div>';
+  h+='</div>';
+  h+='<p class="note" style="margin-bottom:10px">Paths are diffed on the flattened leaf set. Clicking a path jumps to the primary payload’s tree (where the path exists there).</p>';
+  h+='<table><tr><th>change</th><th class="mono">path</th><th class="mono">detail</th></tr>';
+  function fv(e){return e.type==='string'?'"'+esc(String(e.v))+'"':esc(String(e.v));}
+  DIFF.retyped.forEach(function(d){
+    h+='<tr class="d-typ"><td><span class="dk typ">type</span></td><td class="mono"><button class="pathLink" data-jump="'+esc(d.path)+'">'+esc(d.path)+'</button></td>';
+    h+='<td class="mono"><span class="old">'+d.a.type+' '+fv(d.a)+'</span><span class="arrow">→</span><span class="new">'+d.b.type+' '+fv(d.b)+'</span></td></tr>';
+  });
+  DIFF.changed.forEach(function(d){
+    h+='<tr class="d-chg"><td><span class="dk chg">value</span></td><td class="mono"><button class="pathLink" data-jump="'+esc(d.path)+'">'+esc(d.path)+'</button></td>';
+    h+='<td class="mono"><span class="old">'+fv(d.a)+'</span><span class="arrow">→</span><span class="new">'+fv(d.b)+'</span></td></tr>';
+  });
+  DIFF.removed.forEach(function(d){
+    h+='<tr class="d-rem"><td><span class="dk rem">removed</span></td><td class="mono"><button class="pathLink" data-jump="'+esc(d.path)+'">'+esc(d.path)+'</button></td>';
+    h+='<td class="mono"><span class="old">'+fv(d.a)+'</span></td></tr>';
+  });
+  DIFF.added.forEach(function(d){
+    h+='<tr class="d-add"><td><span class="dk add">added</span></td><td class="mono">'+esc(d.path)+'</td>';
+    h+='<td class="mono"><span class="new">'+fv(d.b)+'</span></td></tr>';
+  });
+  h+='</table>';
+  el.innerHTML=h;
+}
+
+/* ---------------- rules tab ---------------- */
+var EXAMPLE_PACK=[
+  {name:'RAG value must be RED / AMBER / GREEN',severity:'high',
+   match:{keyRegex:'(^|_)rag(status)?$',type:'string',valueRegex:'^(RED|AMBER|GREEN)$',negate:true},
+   message:'Decision RAG fields must be exactly RED, AMBER or GREEN (case-sensitive). Anything else — misspellings, casing drift, legacy codes — will fall through decisioning branches.'},
+  {name:'CIFAS case type outside whitelist',severity:'high',
+   match:{keyRegex:'casetype',type:'string',valueRegex:'^(AFR|IFR|PFR|MFR|FFR|AI|VF|VI)$',negate:true},
+   message:'CIFAS case type is not in the expected set (AFR, IFR, PFR, MFR, FFR, AI, VF, VI). Unknown case types can bypass fraud-referral routing.'},
+  {name:'Bureau score outside sane range (0–1000)',severity:'med',
+   match:{keyRegex:'score',type:'number',valueRegex:'^(1000|\\d{1,3})$',negate:true},
+   message:'Score is negative, non-integer or above 1000 — likely a sentinel (999/9999/-1) or a scale mismatch between bureaus.'},
+  {name:'APR outside plausible range (0–100%)',severity:'med',
+   match:{keyRegex:'apr',type:'number',valueRegex:'^(100(\\.0+)?|\\d{1,2}(\\.\\d+)?)$',negate:true},
+   message:'APR value is outside 0–100. Check for basis-point confusion (e.g. 1299 for 12.99%) or an unbounded pricing calculation.'}
+];
+
+function saveRules(){
+  try{localStorage.setItem(RULES_LS_KEY,JSON.stringify(RULES));}catch(e){}
+}
+function loadRules(){
+  try{
+    var raw=localStorage.getItem(RULES_LS_KEY);
+    if(raw){var arr=JSON.parse(raw);if(Array.isArray(arr))RULES=arr;}
+  }catch(e){RULES=[];}
+}
+function renderRules(){
+  var el=$('tab-rules');
+  $('nRules').textContent=RULES.length;
+  var h='<p class="note" style="margin-bottom:10px">Custom rule packs run inside the quality engine after the built-in detectors. '
+    +'Rules (and only rules — never payload data) persist in your browser’s localStorage.</p>';
+  h+='<div class="ruleBox">';
+  h+='<textarea id="ruleTxt" spellcheck="false" placeholder=\'[{"name":"…","severity":"high|med|info","match":{"keyRegex":"…","valueRegex":"…","type":"string","negate":true},"message":"…"}]\'></textarea>';
+  h+='<div class="ruleRow">';
+  h+='<button id="btnRuleApply" class="primary">Add rules</button>';
+  h+='<button id="btnRulePack">Load example pack: UK credit decisioning</button>';
+  h+='<button id="btnRuleClear">Clear all rules</button>';
+  h+='</div></div>';
+  h+='<p class="note" style="margin-bottom:10px">Rule format: <code>match.keyRegex</code> tests the leaf’s key name, <code>match.pathRegex</code> the full dot-path, '
+    +'<code>match.valueRegex</code> the value (set <code>"negate": true</code> to flag values that <b>fail</b> the pattern — the usual shape for whitelists), '
+    +'<code>match.type</code> restricts to a JSON type.</p>';
+  if(RULES.length){
+    h+='<h3 class="sect">Active rules</h3>';
+    RULES.forEach(function(r,i){
+      var hits=RULE_HITS.has(r.name)?RULE_HITS.get(r.name):null;
+      h+='<div class="ruleItem"><div><b>'+esc(r.name)+'</b> <span class="sev '+esc(r.severity)+'">'+esc(r.severity)+'</span>'
+        +(hits!==null?' <span class="meta">'+hits+' hit'+(hits===1?'':'s')+' in current payload</span>':'')
+        +'<br><code>'+esc(JSON.stringify(r.match))+'</code></div>'
+        +'<button class="ruleDel" data-ix="'+i+'">remove</button></div>';
+    });
+  }else{
+    h+='<div class="empty">No custom rules active.</div>';
+  }
+  el.innerHTML=h;
+  $('btnRuleApply').addEventListener('click',function(){
+    var t=$('ruleTxt').value.trim();
+    if(!t)return;
+    var parsed;
+    try{parsed=JSON.parse(t);}catch(e){alert('Rule JSON did not parse: '+e.message);return;}
+    if(!Array.isArray(parsed))parsed=[parsed];
+    var ok=parsed.filter(function(r){return r&&typeof r.name==='string'&&r.match&&typeof r.match==='object';});
+    if(!ok.length){alert('No valid rules found — each rule needs at least "name" and "match".');return;}
+    RULES=RULES.concat(ok);saveRules();rerun();switchTab('rules');
+  });
+  $('btnRulePack').addEventListener('click',function(){
+    var names=new Set(RULES.map(function(r){return r.name;}));
+    EXAMPLE_PACK.forEach(function(r){if(!names.has(r.name))RULES.push(JSON.parse(JSON.stringify(r)));});
+    saveRules();rerun();switchTab('rules');
+  });
+  $('btnRuleClear').addEventListener('click',function(){
+    RULES=[];saveRules();rerun();switchTab('rules');
+  });
+  el.querySelectorAll('.ruleDel').forEach(function(b){
+    b.addEventListener('click',function(){
+      RULES.splice(Number(b.dataset.ix),1);saveRules();rerun();switchTab('rules');
+    });
+  });
+}
+
+/* ---------------- tabs ---------------- */
+function switchTab(name){
+  document.querySelectorAll('#tabs button').forEach(function(b){b.classList.toggle('active',b.dataset.tab===name);});
+  document.querySelectorAll('.tabBody').forEach(function(t){t.classList.toggle('active',t.id==='tab-'+name);});
+}
+$('tabs').addEventListener('click',function(e){
+  var b=e.target.closest('button[data-tab]');
+  if(b)switchTab(b.dataset.tab);
+});
+
+/* ---------------- search ---------------- */
+var doSearch=debounce(function(){
+  var q=$('search').value.trim().toLowerCase();
+  SEARCH_HITS=[];SEARCH_IX=-1;
+  document.querySelectorAll('.row.hit').forEach(function(r){r.classList.remove('hit');});
+  if(!q||!ROOT){$('searchInfo').textContent='';return;}
+  FLAT.forEach(function(f){
+    if(f.path.toLowerCase().indexOf(q)>=0||String(f.v).toLowerCase().indexOf(q)>=0)SEARCH_HITS.push(f.path);
+  });
+  $('searchInfo').textContent=SEARCH_HITS.length?SEARCH_HITS.length+' match'+(SEARCH_HITS.length===1?'':'es'):'no matches';
+},220);
+$('search').addEventListener('input',doSearch);
+$('search').addEventListener('keydown',function(e){
+  if(e.key==='Enter'&&SEARCH_HITS.length){
+    SEARCH_IX=(SEARCH_IX+1)%SEARCH_HITS.length;
+    $('searchInfo').textContent=(SEARCH_IX+1)+' / '+SEARCH_HITS.length;
+    jumpTo(SEARCH_HITS[SEARCH_IX]);
+  }
+});
+
+/* ---------------- exports ---------------- */
+function csvCell(s){
+  s=String(s);
+  if(/[",\n\r]/.test(s))return '"'+s.replace(/"/g,'""')+'"';
+  return s;
+}
+$('btnCsv').addEventListener('click',function(){
+  if(!ROOT)return;
+  var lines=['path,type,value'];
+  FLAT.forEach(function(f){
+    lines.push(csvCell(f.path)+','+f.type+','+csvCell(plainVal(f.path,f.v)));
+  });
+  download('payload-flatten.csv',lines.join('\r\n'),'text/csv');
+});
+
+$('btnReport').addEventListener('click',function(){
+  if(!ROOT)return;
+  var includeValues=false;
+  if(!MASK){
+    includeValues=confirm('PII mask is OFF. Include raw detected PII values in the report?\n\nOK = include values · Cancel = keep them masked in the report.');
+  }
+  var hi=FINDINGS.filter(function(f){return f.sev==='high';}),
+      md=FINDINGS.filter(function(f){return f.sev==='med';}),
+      nf=FINDINGS.filter(function(f){return f.sev==='info';});
+  var L=[];
+  L.push('# JSON X-Ray findings report');
+  L.push('');
+  L.push('Generated by JSON X-Ray (fully client-side; no payload data was transmitted).');
+  L.push('');
+  L.push('## Summary');
+  L.push('');
+  L.push('| metric | value |');
+  L.push('|---|---|');
+  L.push('| nodes | '+NODES.length+' |');
+  L.push('| minified size | '+fmtBytes(RAW.length)+' |');
+  L.push('| critical findings | '+hi.length+' |');
+  L.push('| warnings | '+md.length+' |');
+  L.push('| info | '+nf.length+' |');
+  L.push('| PII items detected | '+PII.length+' |');
+  if(DIFF)L.push('| diff (added / removed / changed / retyped) | '+DIFF.added.length+' / '+DIFF.removed.length+' / '+DIFF.changed.length+' / '+DIFF.retyped.length+' |');
+  L.push('');
+  L.push('## Findings');
+  L.push('');
+  FINDINGS.forEach(function(f){
+    var tag=f.sev==='high'?'CRITICAL':f.sev==='med'?'WARNING':'INFO';
+    L.push('### ['+tag+'] '+f.title);
+    L.push('');
+    L.push(f.desc);
+    if(f.paths.length){
+      L.push('');
+      f.paths.forEach(function(p){L.push('- `'+p+'`');});
+    }
+    L.push('');
+  });
+  L.push('## PII detected ('+PII.length+')');
+  L.push('');
+  if(PII.length){
+    L.push('| kind | path | value |');
+    L.push('|---|---|---|');
+    PII.forEach(function(p){
+      L.push('| '+p.kind+' | `'+p.path+'` | '+(includeValues?'`'+p.value.replace(/\|/g,'\\|')+'`':'`••••••`')+' |');
+    });
+  }else{
+    L.push('_None detected by the heuristics._');
+  }
+  L.push('');
+  download('json-xray-report.md',L.join('\n'),'text/markdown');
+});
+
+/* ---------------- beautify / minify / sort ---------------- */
+function sortDeep(v){
+  var t=typeOf(v);
+  if(t==='array')return v.map(sortDeep);
+  if(t==='object'){
+    var o={};
+    Object.keys(v).sort().forEach(function(k){o[k]=sortDeep(v[k]);});
+    return o;
+  }
+  return v;
+}
+function maskDeep(v,segs){
+  var t=typeOf(v);
+  if(t==='array')return v.map(function(c,i){return maskDeep(c,segs.concat(i));});
+  if(t==='object'){
+    var o={};
+    Object.keys(v).forEach(function(k){o[k]=maskDeep(v[k],segs.concat(k));});
+    return o;
+  }
+  return _piiset.has(dotPath(segs))?'••••••':v;
+}
+function emitJSON(pretty,e){
+  if(!ROOT)return;
+  var src=MASK?maskDeep(ROOT,[]):ROOT;
+  if(SORT)src=sortDeep(src);
+  var txt=pretty?JSON.stringify(src,null,e.altKey?4:2):JSON.stringify(src);
+  var label=(pretty?'Formatted':'Minified')+' JSON ('+fmtBytes(txt.length)+')'+(MASK?', PII masked':'');
+  if(e.shiftKey)download(pretty?'payload-pretty.json':'payload.min.json',txt,'application/json');
+  else copyText(txt,label+' copied');
+}
+$('btnPretty').addEventListener('click',function(e){emitJSON(true,e);});
+$('btnMinify').addEventListener('click',function(e){emitJSON(false,e);});
+$('btnSort').addEventListener('click',function(){
+  SORT=!SORT;
+  this.classList.toggle('on',SORT);
+  this.setAttribute('aria-pressed',String(SORT));
+  renderTree();
+  toast(SORT?'Keys sorted A→Z (view + output only — the payload itself is untouched)':'Original key order restored');
+});
+
+/* ---------------- mask toggle ---------------- */
+$('btnMask').addEventListener('click',function(){
+  MASK=!MASK;
+  this.textContent='Mask PII: '+(MASK?'on':'off');
+  this.classList.toggle('on',MASK);
+  this.setAttribute('aria-pressed',String(MASK));
+  renderAll();
+});
+
+/* ---------------- load pipeline ---------------- */
+function parseWithLine(txt){
+  try{
+    return {ok:true,value:JSON.parse(txt)};
+  }catch(e){
+    var msg=String(e.message);
+    var m=msg.match(/position (\d+)/);
+    if(m){
+      var pos=Number(m[1]);
+      var upTo=txt.slice(0,pos);
+      var line=upTo.split('\n').length;
+      var col=pos-upTo.lastIndexOf('\n');
+      var lineTxt=(txt.split('\n')[line-1]||'').slice(0,120);
+      return {ok:false,err:msg+'\n→ approx. line '+line+', column '+col+':\n'+lineTxt};
+    }
+    var m2=msg.match(/line (\d+) column (\d+)/);
+    if(m2)return {ok:false,err:msg};
+    return {ok:false,err:msg};
+  }
+}
+
+function rerun(){
+  if(!ROOT){renderAll();return;}
+  var meta=walk(ROOT);
+  window.__meta=meta;
+  analyse(meta);
+  scanPII();
+  renderAll();
+}
+function renderAll(){
+  renderStrip();
+  renderTree();
+  renderInsights();
+  renderQuality();
+  renderPII();
+  renderFlatten();
+  renderQuery();
+  renderDiff();
+  renderRules();
+}
+
+function load(txt,cmpTxt){
+  var r=parseWithLine(txt);
+  if(!r.ok)return r.err;
+  DIFF=null;
+  if(cmpTxt&&cmpTxt.trim()){
+    var r2=parseWithLine(cmpTxt);
+    if(!r2.ok)return 'Comparison payload: '+r2.err;
+    DIFF=computeDiff(r.value,r2.value);
+  }
+  ROOT=r.value;
+  RAW=JSON.stringify(ROOT);
+  rerun();
+  return null;
+}
+
+/* ---------------- overlay wiring ---------------- */
+function showOverlay(){$('overlay').classList.remove('hidden');$('loadErr').style.display='none';$('btnRepair').style.display='none';$('txtMain').focus();}
+function hideOverlay(){$('overlay').classList.add('hidden');}
+$('btnLoad').addEventListener('click',showOverlay);
+$('btnCancel').addEventListener('click',hideOverlay);
+$('cmpToggle').addEventListener('click',function(){
+  var w=$('cmpWrap');
+  var open=w.classList.toggle('collapsed');
+  this.setAttribute('aria-expanded',String(!open));
+  this.textContent=(open?'＋':'－')+' Compare against a second payload (optional)';
+});
+function readFileInto(input,ta){
+  input.addEventListener('change',function(){
+    var f=input.files[0];
+    if(!f)return;
+    var rd=new FileReader();
+    rd.onload=function(){ta.value=String(rd.result);};
+    rd.readAsText(f);
+  });
+}
+readFileInto($('fileMain'),$('txtMain'));
+readFileInto($('fileCmp'),$('txtCmp'));
+function attemptLoad(txt,cmpTxt){
+  REPAIR_NOTES=[];
+  var err=load(txt,cmpTxt);
+  if(!err){hideOverlay();switchTab('quality');return true;}
+  $('txtMain').value=txt;
+  if(cmpTxt)$('txtCmp').value=cmpTxt;
+  showOverlay();
+  var e=$('loadErr');e.textContent=err;e.style.display='block';
+  $('btnRepair').style.display='inline-block';
+  return false;
+}
+$('btnParse').addEventListener('click',function(){
+  attemptLoad($('txtMain').value,$('txtCmp').value);
+});
+$('btnRepair').addEventListener('click',function(){
+  var r=repairJSON($('txtMain').value);
+  var cmpRaw=$('txtCmp').value,cmpFixed=cmpRaw;
+  if(cmpRaw.trim()){
+    try{JSON.parse(cmpRaw);}catch(err){cmpFixed=repairJSON(cmpRaw).text;}
+  }
+  REPAIR_NOTES=r.notes;
+  var err=load(r.text,cmpFixed);
+  if(err){
+    REPAIR_NOTES=[];
+    var e=$('loadErr');
+    e.textContent='Repair could not produce valid JSON.\n'+err;
+    e.style.display='block';
+    return;
+  }
+  $('txtMain').value=r.text;
+  if(cmpFixed!==cmpRaw)$('txtCmp').value=cmpFixed;
+  hideOverlay();
+  switchTab('quality');
+  toast('Repaired: '+(r.notes.join('; ')||'no changes needed'));
+});
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'&&!$('overlay').classList.contains('hidden'))hideOverlay();
+});
+
+/* ---------------- upload + drag & drop ---------------- */
+function loadFromFile(file){
+  if(!file)return;
+  var rd=new FileReader();
+  rd.onload=function(){
+    var ok=attemptLoad(String(rd.result),'');
+    if(ok)toast('Loaded '+file.name);
+  };
+  rd.readAsText(file);
+}
+$('btnUpload').addEventListener('click',function(){$('fileHeader').click();});
+$('fileHeader').addEventListener('change',function(){
+  loadFromFile(this.files[0]);
+  this.value='';
+});
+var dragDepth=0;
+window.addEventListener('dragenter',function(e){
+  if(e.dataTransfer&&Array.prototype.some.call(e.dataTransfer.types||[],function(t){return t==='Files';})){
+    dragDepth++;
+    $('dropVeil').classList.add('show');
+  }
+});
+window.addEventListener('dragleave',function(){
+  dragDepth=Math.max(0,dragDepth-1);
+  if(!dragDepth)$('dropVeil').classList.remove('show');
+});
+window.addEventListener('dragover',function(e){e.preventDefault();});
+window.addEventListener('drop',function(e){
+  e.preventDefault();
+  dragDepth=0;
+  $('dropVeil').classList.remove('show');
+  if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length)loadFromFile(e.dataTransfer.files[0]);
+});
+
+/* ---------------- demo payload ---------------- */
+var DEMO={
+  "applicationId":"APP-2024-000123",
+  "meta":{
+    "generatedAt":"2024-06-01T10:15:30Z",
+    "source":"decision-engine",
+    "requestId":"  padded-ref-001  ",
+    "emptyBlock":{},
+    "emptyList":[]
+  },
+  "applicant":{
+    "firstName":"Jane",
+    "FirstName":"JANE",
+    "surname":"Smith",
+    "dob":"2011-04-02",
+    "dateOfBirth":"1984-11-23",
+    "email":"jane.smith@example.co.uk",
+    "phone":"07700 900123",
+    "address":{"line1":"1 High Street","town":"Leeds","postcode":"LS1 4AP"},
+    "income":999999,
+    "employmentYears":"7",
+    "homeowner":"Y",
+    "hasCcj":"false",
+    "accountNumber":"12345678",
+    "sortCode":"20-00-00"
+  },
+  "bureau":{
+    "transunion":{
+      "score":9999,
+      "scoreDate":"2024-05-30",
+      "searchedAt":"2024-05-30T09:00:00+0000",
+      "fraudFlag":"N",
+      "balance":"1234.56"
+    },
+    "equifax":{
+      "score":-1,
+      "dateOfBirth":"1985-01-05",
+      "updatedAt":"2024-05-30T09:00:00+00:00",
+      "riskBand":null,
+      "notes":null,
+      "previousSurname":null,
+      "aliasName":null
+    },
+    "cifas":{
+      "caseType":"XZR",
+      "recordedAt":"2024-05-30 09:00:00",
+      "score":"excellent"
+    }
+  },
+  "decision":{
+    "rag":"Gren",
+    "apr":129.9,
+    "affordabilityRatio":"Infinity",
+    "cutOffScore":999,
+    "approved":"true",
+    "referReason":null
+  }
+};
+function loadDemo(){
+  hideOverlay();
+  REPAIR_NOTES=[];
+  $('txtMain').value=JSON.stringify(DEMO,null,2);
+  var err=load($('txtMain').value,'');
+  if(err){alert(err);return;}
+  switchTab('quality');
+}
+$('btnDemo').addEventListener('click',loadDemo);
+$('btnDemo2').addEventListener('click',loadDemo);
+
+/* ---------------- init ---------------- */
+loadRules();
+renderAll();
+showOverlay();
+})();
+</script>
+</body>
+</html>

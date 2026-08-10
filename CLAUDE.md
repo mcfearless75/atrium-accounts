@@ -1,20 +1,27 @@
-# JSON X-Ray — Payload Workbench
+# Atrium — Accounts &amp; Migration Workbench
 
 Project brief for Claude Code. Read this fully before making changes.
 
 ## What this is
 
-A single-file, zero-dependency, fully client-side JSON inspection webapp aimed at data/decisioning professionals (credit risk, bureau payloads, API traces). It goes beyond "beautify JSON" tools: it actively scans payloads for data-quality defects and PII.
+**Atrium** is a suite of four single-file, zero-dependency, fully client-side workbenches
+sharing one product shell. Each loads an export, scans it for defects in plain English, and
+emits whatever files the next step needs. Nothing is uploaded; nothing is stored server-side.
 
-**Owner:** PaulMc (Bluewater Associates). Primary real-world use case: inspecting credit decisioning connector payloads (TransUnion, Equifax, CIFAS, affordability engines) during QA/testing at a UK financial services client. Payloads are sensitive — the no-server, no-network architecture is a deliberate design constraint, not an accident. **Never add any code that transmits payload data anywhere.**
+The original member — JSON X-Ray (`json.html`) — is a JSON inspection app for
+data/decisioning professionals (credit risk, bureau payloads, API traces). It goes beyond
+"beautify JSON" tools: it actively scans payloads for data-quality defects and PII.
+
+**Owner:** PaulMc (Bluewater Associates). Primary real-world use case: inspecting credit decisioning connector payloads (TransUnion, Equifax, CIFAS, affordability engines) during QA/testing at a UK financial services client, and migrating a client off Sage 50 onto self-hosted ERPNext. Payloads and ledgers are sensitive — the no-server, no-network architecture is a deliberate design constraint, not an accident. **Never add any code that transmits payload data anywhere.**
 
 ## Repo layout
 
 ```
-index.html                    ← the entire app (HTML + CSS + JS in one file)
-sage.html                     ← sister app: Sage X-Ray — Ledger Workbench (same one-file rules)
-migrate.html                  ← sister app: Migration X-Ray — Sage 50 → ERPNext (same one-file rules)
-bom.html                      ← sister app: BOM X-Ray — Bill of Materials Workbench (same one-file rules)
+index.html                    ← Atrium home dashboard (module cards + migration workflow)
+json.html                     ← JSON X-Ray — Payload Workbench (was index.html)
+sage.html                     ← Sage X-Ray — Ledger Workbench (same one-file rules)
+migrate.html                  ← Migration X-Ray — Sage 50 → ERPNext (same one-file rules)
+bom.html                      ← BOM X-Ray — Bill of Materials Workbench (same one-file rules)
 CLAUDE.md                     ← this file
 README.md                     ← user-facing docs + Pages setup
 .claude/skills/               ← project skills: xray-conventions, sage-migration
@@ -22,13 +29,22 @@ README.md                     ← user-facing docs + Pages setup
 .github/workflows/pages.yml   ← GitHub Pages deploy (publishes repo root on push to main)
 ```
 
+## The product shell
+
+Every module carries an identical `.appbar` immediately after `<body>`: brand link to
+`index.html`, nav across all five pages with `class="on"` on the current one, and a
+`100% CLIENT-SIDE` marker. The markup and its CSS block are **duplicated verbatim** in each
+file — that is the cost of the single-file constraint, and it is deliberate. If you change
+the nav, change it in all five files and re-check that each page marks the right link `on`.
+`index.html` is a static page with no script block; it must stay that way.
+
 Read the `xray-conventions` skill before modifying any app; read `sage-migration` before
 touching migrate.html or anything Sage/ERPNext. After pure-layer changes, run the
 `migration-auditor` agent.
 
 There is no build step, no package.json, no framework. Keep it that way unless a feature genuinely cannot be done in vanilla JS (unlikely). The single-file constraint is a feature: it must remain trivially deployable to GitHub Pages / Vercel / an intranet share by copying one file.
 
-## Architecture (inside index.html)
+## Architecture (inside json.html)
 
 One IIFE, strict mode. Key state:
 
@@ -142,7 +158,7 @@ No test framework. Manual smoke test = load the built-in demo payload (`btnDemo`
 
 ## Sister app: Sage X-Ray — Ledger Workbench (`sage.html`)
 
-Same architecture rules as `index.html`: one file, one IIFE, strict mode, vanilla JS, design tokens shared with JSON X-Ray, `esc()` on everything rendered, UK English. Built for the client's Sage estate.
+Same architecture rules as `json.html`: one file, one IIFE, strict mode, vanilla JS, design tokens shared with JSON X-Ray, `esc()` on everything rendered, UK English. Built for the client's Sage estate.
 
 **Script structure** (matters for testing): the IIFE is split by a
 `/* ================= DOM LAYER ================= */` marker. Everything above it is pure

@@ -35,7 +35,7 @@ A sister app in the same file, same rules: single-file, zero-dependency, fully c
 - **Complexity-aware model routing** — Auto mode weighs finding severity, ledger size and how analytical your question is, then routes it to Claude Haiku 4.5 (quick lookups), Sonnet 5 (moderate) or Opus 5 (judgement calls) — cheapest model that can do the job, with the choice and reasoning shown on every answer. Manual override available.
 - **Demo ledger** — deliberately dirty; fires all 15 detector families.
 
-Open `sage.html` — it deploys alongside `index.html` on the same Pages site.
+Open `sage.html` — it deploys alongside the other modules on the same Pages site.
 
 ## Migration X-Ray — Sage 50 → ERPNext (`migrate.html`)
 
@@ -61,7 +61,7 @@ A roll-up is either complete or reported as incomplete — a missing component c
 
 ## Run it
 
-Open `index.html` (payloads), `sage.html` (ledgers), `migrate.html` (Sage → ERPNext migration) or `bom.html` (bills of materials) in any modern browser. That's it.
+Open `index.html` — the Atrium home dashboard — and pick a module: `sage.html` (ledgers), `bom.html` (bills of materials), `migrate.html` (Sage → ERPNext migration) or `json.html` (payloads). Any modern browser. That's it.
 
 ## Deploy to GitHub Pages
 
