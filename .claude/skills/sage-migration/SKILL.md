@@ -47,8 +47,26 @@ control-account line in the TB export.
 
 ## VAT / MTD constraints
 
-- Primary filing route post-migration: ERPNext community UK VAT app → HMRC MTD API.
-- Fallback: HMRC-recognised bridging software (digital links preserved).
+**Full detail and sourcing: `ERPNEXT-DEPLOYMENT.md` §7 — read that before touching
+this section again, and update both together.**
+
+- The community app once assumed as primary (`uk_vat`,
+  `software-to-hardware/erpnext-vat-mtd`) is **ruled out**: no commits since
+  July 2021, an open unanswered issue reports it doesn't install on v15, no
+  flat-rate scheme support, and it pushes HMRC fraud-prevention-header compliance
+  onto the client directly.
+- Current best candidate: **Case Solved's "United Kingdom" app**
+  (`CaseSolvedUK/uk-support`) — proprietary, pay-per-submission, claims HMRC
+  recognition. ⚠ Unverified: v15 support (public listing describes v14),
+  self-hosted support, current pricing.
+- **HMRC-recognised bridging software is the lower-risk default right now**, not a
+  fallback — it decouples filing from any ERPNext app's maintenance status. The
+  handoff must be a file export, never hand-retyped figures (digital links have
+  been mandatory since April 2021).
+- **No separate MTD registration/sign-up step exists for an already VAT-registered
+  business** — HMRC auto-enrolled everyone after August 2022. Don't budget lead
+  time for "registration"; budget it for vendor onboarding instead.
+- HMRC software authorisation expires after 18 months and must be re-granted.
 - During parallel run: compute the VAT return in BOTH systems each quarter;
   accountant signs off the first matching quarter before cutover.
 - HMRC requires 6-year record retention: final Sage dataset is exported and archived

@@ -38,7 +38,14 @@ parallel run is **not possible** in the window. Consequences and required action
    boundary so no return is split across two systems. BOM/stock/dashboards come after.
 4. **Check where the VAT quarter end falls** relative to the expiry — that is the ideal
    cutover date. File the final return from Sage, start clean in ERPNext.
-5. **MTD registration with HMRC takes lead time** — start it immediately, not at the end.
+5. ~~MTD registration with HMRC takes lead time~~ — **checked, and this looks
+   wrong.** For a business already VAT-registered (this client, filing from Sage
+   today), HMRC auto-enrolled all remaining VAT-registered businesses after
+   August 2022; there's no longer a separate MTD sign-up step. The real lead time
+   is commercial onboarding with whichever MTD software route is chosen — see
+   `ERPNEXT-DEPLOYMENT.md` §7, which also found the "primary" route named below
+   (the community VAT app) is unmaintained since 2021 and doesn't install on v15.
+   Get the accountant to confirm this correction before treating it as settled.
 
 ## Other open questions
 
