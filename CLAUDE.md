@@ -172,19 +172,70 @@ nested objects flattened), `parseDate` (UK dd/mm/yyyy + ISO), `normaliseTaxCode`
 (Nigrini MAD), `computeStats`. `analyse` reads an injectable clock from `txs._today` so the
 demo and tests are deterministic (demo pins 2026-07-15).
 
-**Detector families (15)** — the demo ledger must fire every one: duplicate postings ·
-VAT-vs-tax-code arithmetic · unbalanced journals · SI sequence gaps (per-pair gaps ≤10 only) ·
-threshold skimming (£1k/£5k/£10k/£25k, 5% band) · negative invoices · future-dated ·
+**Detector families (21)** — the demo ledger must fire every one: unreadable amounts ·
+rows with the wrong number of columns · totals rows found and excluded · postings with no
+date · duplicate postings · VAT-vs-tax-code arithmetic · VAT sign disagreeing with net ·
+credit notes carrying a negative amount · unbalanced journals · SI **and PI** sequence gaps
+(per-pair gaps ≤10 only) · threshold-skimming clusters · negative invoices · future-dated ·
 unparseable dates · weekend postings · stale (>2y) · missing references · missing tax codes ·
-non-standard tax codes · round sums ≥£500 · Benford deviation (needs n≥25; med >1.5% MAD,
-info >1.2%).
+tax codes the VAT check cannot verify · round sums ≥£500 · Benford deviation.
+
+**Rules the pure layer must keep** (each was a defect found by adversarial audit; the
+regression suite pins every one):
+
+- **`parseMoney` is strict.** It reads bracket negatives `(1,250.00)`, trailing minus
+  `1250.00-` and `CR`/`DR` suffixes — all Sage's own export notations — and it *refuses*
+  anything ambiguous rather than guessing. A stripped comma turns `"9,50"` into 950;
+  `parseFloat` prefix-parses `"12abc"` into 12. Both put a fabricated figure into a total.
+- **A null amount is a finding, not a skipped row.** There was a detector for unreadable
+  dates and none for unreadable amounts, so a bracket-negative credit note vanished out of
+  the headline figure in silence. Any surface printing a total must also print its coverage
+  — `computeStats` returns `netRows`/`missingNet`/`datedRows`/`missingDate` for exactly this.
+- **`parseCSV` opens a quoted cell only at cell start.** A quote mid-cell (`5" reel`) is
+  literal text; treating it as a quote character swallowed the rest of the file into one
+  cell and the parse still "succeeded".
+- **`parseDate` rejects impossible calendar dates.** `Date.UTC` rolls `31/02` into March —
+  a `31/03` typo would otherwise relocate a posting into a different VAT quarter. Two-digit
+  years are windowed (`>70` → 1900s), not blindly `+2000`.
+- **`fmtGBP` is signed**; `fmtMag` is the explicit magnitude for the few places one is
+  wanted (bar widths, "differ by"). Rendering −£2,000 of supplier credit as "Expenditure
+  £2,000.00" turns money coming back into money going out.
+- **A breakdown must contain every line its own total contains.** `rank()` is for top-N
+  lists only; `breakdown()` keeps net-negative categories. Filtering them out left a P&L
+  table — and its CSV export — that did not add up to the total printed underneath it.
+- **Journals are keyed on reference AND date.** Sage users reuse one reference for a
+  recurring monthly journal; grouping on reference alone let two broken journals cancel out
+  and neither be reported.
+- **The duplicate key is the whole posting**, normalised for case and with the parsed date
+  rather than the raw string. Nominal and details belong in it — one invoice split across
+  two nominals shares everything else and is not a duplicate.
+- **Threshold skimming needs a cluster, not a hit.** ~3.6% of any ledger falls in a 5% band
+  under a threshold by arithmetic alone, so the detector compares each band against the
+  mirror band just above it and fires only on the asymmetry. This detector is effectively a
+  fraud accusation; a false positive here is a serious defect, not noise.
+- **Benford needs `BENFORD_MIN_N` (120) amounts and uses chi-squared, not raw MAD.**
+  Nigrini's MAD cutoffs are large-sample constants: at n=25 perfectly Benford data sits at
+  MAD ≈ 0.05, three times the "nonconformity" line, so the old n≥25 gate accused every small
+  ledger. Journal legs are excluded — each JD is matched by an identical JC, so a recurring
+  journal swamps the distribution.
+- **Bank and cash lines are first-class.** `BANK_DIR` gives BP/CP/VP and BR/CR/VR opposite
+  directions (a rent refund reduces rent), they are inside `VATABLE_TYPES`, and their VAT
+  reaches the VAT summary. They are among the most common postings in a Sage estate.
+- **A credit type plus a negative amount states the direction twice.** Sage 50 holds credit
+  notes as positive magnitudes, so such a row is a mixed convention and could mean either
+  direction. It is excluded and reported, never guessed at.
 
 **AI boundary — read carefully.** The "never transmit payload data" rule holds for sage.html
 with one deliberate, explicit exception: the **Ask Claude** button on the AI Copilot tab sends
 the generated briefing text + the user's question to `api.anthropic.com`, and only after the
 user pastes their own key AND ticks the consent checkbox. The key is held in a form field
-only — never persisted. Never widen this: no auto-send, no telemetry, no other endpoints, no
-key storage. The briefing itself is built locally and respects `MASK`.
+only — never persisted, and blanked after each send. Never widen this: no auto-send, no
+telemetry, no other endpoints, no key storage. The briefing is built locally. **Loading a
+ledger clears the briefing and un-ticks consent** — otherwise Ask Claude transmits the
+*previous* client's figures while attributing the answer to the new one, which is the one
+way real client data can leave this machine unintended. `MASK` covers account names and
+narrative but **not references or amounts**; references reach the briefing through finding
+titles, so the briefing says exactly that rather than claiming a blanket mask.
 
 **Model routing.** `routeModel(choice, question, findings, txCount)` (pure layer) picks the
 model. Manual tiers: Fast = `claude-haiku-4-5`, Balanced = `claude-sonnet-5`, Deep =
@@ -211,8 +262,11 @@ silently under-reporting. Never let a surface report a total it did not actually
 
 **Smoke test (sage.html)** after any change:
 
-1. Demo loads and lands on **Dashboard**; strip shows 4 critical / 5 warnings / 6 info;
-   all 15 detector families appear in the Workbench.
+0. `node tests/sage.test.mjs` passes (116 assertions over the pure layer — the regression
+   suite; keep it green and extend it with each detector).
+1. Demo loads and lands on **Dashboard**; strip shows 7 critical / 8 warnings / 6 info,
+   and discloses coverage (`net … over 184 of 186 rows`, `… (2 undated)`);
+   all 21 detector families appear in the Workbench.
 1b. Dashboard: KPI row, monthly grouped-bar chart with the undated-transactions note,
    ranked bars filled, P&L and VAT summaries reconcile, both report CSVs download.
 2. Click a finding row-link → grid scrolls, row highlighted.
@@ -323,13 +377,15 @@ header alias to decide which convention applies; never test `OBSOLETE_RE` direct
 
 ## Testing beyond the smoke tests
 
-`tests/bom.test.mjs` is the only committed suite. It slices `bom.html` at the DOM-layer
-marker, evaluates the pure half in a `vm` context with no `document`, and asserts against
-the exact inputs that broke each fixed defect. Run it with `node tests/bom.test.mjs`.
+`tests/bom.test.mjs` (81 assertions) and `tests/sage.test.mjs` (116) are the committed
+suites. Each slices its app at the DOM-layer marker, evaluates the pure half in a `vm`
+context with no `document`, and asserts against the exact inputs that broke each fixed
+defect. Run them with `node tests/<app>.test.mjs`.
 
-Do the same for the other apps rather than writing throwaway harnesses in a scratch
-directory — an earlier `migrate.html` suite was written that way and is simply gone, which
-is why its regressions cannot be re-checked.
+`migrate.html` still has none. Its suite was written into a scratch directory in an earlier
+session and is gone, so its 17 fixed defects — three of them false-clean reconciliation bugs
+that gate cutover — cannot currently be re-checked. Write it in the shape of the two above;
+never write a throwaway harness again.
 
 ## Deployment
 
