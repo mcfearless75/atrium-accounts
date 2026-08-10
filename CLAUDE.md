@@ -289,21 +289,62 @@ Three tabs: **Convert** (Sage exports → ERPNext import CSVs with defect profil
 during the parallel run; "clean" report gates cutover), **Checklist** (cutover gates;
 ticks in localStorage — never client data).
 
-Key pure functions: `detectEntity` (fuzzy header + filename-hint scoring — the filename
-tie-breaks customers vs suppliers), `convertParties` / `convertItems` / `convertNominal`
-(→ ERPNext v15 Data Import shapes; opening journal must balance and reports its delta),
-`rootTypeFor` (Sage UK nominal ranges → ERPNext root types), `parseMoney` (strict —
-rejects malformed amounts; accepts `(1,250.00)` bracket negatives), `reconcile`/`parseSide`
-(TB or transaction shape auto-detect, per-account aggregation, ref+amount multiset diff).
+Key pure functions: `detectEntity` (fuzzy header scoring, then the **filename decides**
+customers vs suppliers — Sage supplier records carry a Credit Limit too, so header bonuses
+must never outvote it; a header/filename conflict is declared ambiguous rather than won),
+`convertParties` / `convertItems` / `convertNominal` (→ ERPNext v15 Data Import shapes;
+opening journal must balance and reports its delta), `rootTypeFor` (Sage UK nominal ranges →
+ERPNext root types), `parseMoney` (strict), `reconcile`/`parseSide` (TB or transaction shape
+auto-detect, per-account aggregation, ref+amount multiset diff), `accountCode`,
+`checkWidth` / `checkFormulaInjection` (shared across all three converters).
+
+**Rules the pure layer must keep** (each was a defect found by adversarial audit):
+
+- **`parseMoney` is kept behaviourally identical to `sage.html`'s `parseMoney` and
+  `bom.html`'s `parseNum`.** When the three disagree, the same cell converts one way and
+  audits another. It reads `(1,250.00)`, `1250.00-` and `CR`/`DR`; it refuses `(-5.00)`,
+  `8odd`, and any comma that is not a thousands separator. `"9,50"` once became 950, and
+  through `convertNominal` the opening journal **balanced perfectly at 100×** — so the
+  delta check could never catch it.
+- **`rootTypeFor` requires `^\d{1,4}$`.** `parseInt` prefix-parsed `"4,000"` to 4 and filed
+  a sales nominal under fixed assets. A 5-digit chart is a *different scheme*, not a chart
+  where every account is suspense — it returns `null` and says so. Suspense is 9000–9999,
+  a bounded range, not a catch-all fallthrough.
+- **`accountCode` must not truncate at the first non-digit.** ERPNext separates code from
+  name with a *spaced* dash (`1200 - Bank`); Sage sub-accounts use a bare one (`1200-01`).
+  Collapsing both to `1200` merged two bank accounts and an £800 misallocation reconciled
+  clean.
+- **`parseSide` consults the balance column when the legs are null OR an explicit zero.**
+  ERPNext v15's own Trial Balance emits period movement of `0.00` alongside a closing
+  balance; reading the zeros as the answer destroyed every figure in the ledger and
+  reported clean. `convertNominal` already did this — its sibling did not. **Check every
+  fix against its sibling function.**
+- **Anything unexamined blocks a clean verdict**: unreadable amounts, blank account codes,
+  rows with no amount in any column, misaligned rows, repeated codes in a trial balance,
+  and a side that cannot be compared at transaction level. `reconcile` also returns `notes`
+  naming *which columns it actually read* — a clean verdict on the wrong columns is still
+  a clean verdict.
+- **Shape mismatch is checked within each side, not only between them.** When both sides
+  failed transaction detection the tool silently dropped to totals-only, and two ledgers
+  holding entirely different invoices reconciled clean on matching account totals.
+- **Transaction references are matched case- and space-insensitively**; ERPNext item codes
+  and party names are matched case-insensitively because MariaDB's default collation is.
+- **Formula-shaped values (`=`, `@`) are reported, never rewritten.** These CSVs are opened
+  in Excel by the client's accountant, but mangling a value would corrupt the import — the
+  data has to survive intact, so the user is told instead.
 
 **Smoke test (migrate.html)** after any change:
 
+0. `node tests/migrate.test.mjs` passes (196 assertions over the pure layer — the
+   regression suite; keep it green and extend it with each fix).
 1. Demo loads all four exports; strip shows blocking issues + warnings; every issue class
    fires (dup refs, bad VAT no, missing postcode, dup stock code, negative qty, missing
    UoM, cost>sale, zero-cost stock, suspense-range nominal, unparseable amount, TB
-   imbalance).
+   imbalance). `customers.csv` detects as Customers and `suppliers.csv` as Suppliers.
 2. Each entity card offers its download(s); downloaded CSVs re-parse cleanly.
-3. Reconcile demo pair → 2 deltas + 1 Sage-only account, report downloads as .md.
+3. Reconcile demo pair → 2 deltas + 1 Sage-only account, **plus the unreadable-amount
+   warning** (the demo must exercise a false-clean guard, not pass it by luck), and the
+   "columns read" notes appear. Report downloads as .md.
 4. Checklist ticks persist across reload and reset works.
 5. `node --check` passes; pure layer runs headless when sliced at the DOM-layer marker.
 
@@ -378,7 +419,7 @@ header alias to decide which convention applies; never test `OBSOLETE_RE` direct
 ## Testing beyond the smoke tests
 
 Three committed suites, one per accounting app: `tests/bom.test.mjs` (81 assertions),
-`tests/sage.test.mjs` (116) and `tests/migrate.test.mjs` (126). Each slices its app at the
+`tests/sage.test.mjs` (116) and `tests/migrate.test.mjs` (196). Each slices its app at the
 DOM-layer marker, evaluates the pure half in a `vm` context with no `document`, and asserts
 against the exact inputs that broke each fixed defect. Run them with
 `node tests/<app>.test.mjs`. Never write a throwaway harness in a scratch directory — an
@@ -386,10 +427,12 @@ earlier `migrate.html` suite was written that way and was simply gone by the nex
 
 **A suite that has never failed has not been shown to work.** `tests/migrate.test.mjs`
 passed on its first run, which is exactly when to distrust it, so it was mutation-tested:
-ten guards were broken one at a time (`parseMoney` accepting `(-5.00)`, the transaction key
+guards were broken one at a time (`parseMoney` accepting `(-5.00)`, the transaction key
 reverting to absolute amounts, `warnings` no longer blocking a clean verdict, journal legs
-left unrounded, quotes opening mid-cell, and so on) and **all ten mutations were caught**.
-Do the same after adding a block of assertions — passing is not evidence.
+left unrounded, quotes opening mid-cell, `accountCode` truncating at the first non-digit,
+the filename no longer overriding header bonuses, and so on). **21 of 21 mutations are
+caught.** Do the same after adding a block of assertions — passing is not evidence, and two
+weak assertions were found and tightened this way.
 
 `json.html` has no suite. It is the lowest-stakes app (payload QA, not client accounting
 data) and has never been audited.
