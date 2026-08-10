@@ -13,15 +13,34 @@ Update this file at the end of any session that changes the plan or ships work.
   Sage contract expires** — never renew, no capability gap.
 - PaulMc has Sage logins with full data-export rights, so exports are available on demand.
 
-## Open questions blocking the plan
+## ⚠️ HARD DEADLINE — Sage expires in 6 weeks (stated 2026-08-10, so ~2026-09-21)
 
-1. **Sage contract end date + notice period** — anchors the whole timeline. The parallel
-   run wants a full VAT quarter, so discovery should start 4–5 months before expiry.
-2. Client's actual Sage invoice (to replace illustrative costs in the proposal).
-3. Whether the year-end accountant is bought in — they hold the veto.
-4. "9thrts" — user mentioned it re: BOMs; never clarified what system this is. Ask.
-5. BOM data shape: Sage Manufacturing exports vs spreadsheets; costing accuracy vs
-   structural mess as the client's real pain.
+This invalidates the original 4–5 month timeline in the proposal. A full-VAT-quarter
+parallel run is **not possible** in the window. Consequences and required actions:
+
+1. **Export everything NOW, before the licence lapses.** This is the one irreversible
+   risk: if Sage 50 goes read-only or stops opening when the subscription ends, the
+   data becomes very hard to get out. Run and archive full exports (customers,
+   suppliers, products, nominal/TB, full audit trail, VAT returns filed to date) this
+   week regardless of which migration path is chosen. Non-negotiable, do it first.
+2. **Establish whether it expires or auto-renews, and the notice deadline.** Many Sage
+   contracts auto-renew unless cancelled with ~30 days' notice — with 6 weeks left, the
+   notice deadline may be days away. Missing it can lock in another full year.
+3. **Decide: short extension vs compressed cutover.** A 1–3 month extension buys a
+   proper parallel run and is usually worth it. If an extension is only available as a
+   full year, compress instead — accounting-only scope, cut over at a VAT quarter
+   boundary so no return is split across two systems. BOM/stock/dashboards come after.
+4. **Check where the VAT quarter end falls** relative to the expiry — that is the ideal
+   cutover date. File the final return from Sage, start clean in ERPNext.
+5. **MTD registration with HMRC takes lead time** — start it immediately, not at the end.
+
+## Other open questions
+
+- Client's actual Sage invoice (to replace illustrative costs in the proposal).
+- Whether the year-end accountant is bought in — they hold the veto. Urgent now.
+- BOM data shape: Sage Manufacturing exports vs spreadsheets; costing accuracy vs
+  structural mess as the client's real pain.
+- ("9thrts" from an earlier message was a typo — disregard, means nothing.)
 
 ## Shipped
 
@@ -43,10 +62,13 @@ Update this file at the end of any session that changes the plan or ships work.
 ## In flight / next steps
 
 - Draft PR #4 awaiting review/merge: https://github.com/mcfearless75/Json/pull/4
-- Repo housekeeping PaulMc asked about and hasn't decided: the repo is still named
-  `Json` though it now holds three apps and the migration project — consider renaming
-  it (GitHub redirects the old URL) vs splitting the Sage work into its own repo.
-  Also wants a local clone under `C:\Users\LAPTOP80\Projects` for backup.
+- **Repo rename decided: `Json` → `atrium-accounts`.** Must be done by PaulMc in the
+  GitHub UI (Settings → General → Repository name) — no MCP tool exposes repo rename
+  and this session has no direct GitHub API access. After the rename the Pages URLs
+  become `mcfearless75.github.io/atrium-accounts/{sage,migrate}.html`; the old Pages
+  URLs stop working (GitHub redirects repo URLs but not project Pages URLs). Local
+  clone remote then needs `git remote set-url`.
+- PaulMc wants a local clone under `C:\Users\LAPTOP80\Projects` for backup.
 - ERPNext import column headers are best-effort against v15 Data Import templates —
   **must be verified against the client's live instance in Phase 0** before bulk import.
 - Candidate next build: **BOM X-Ray** (circular refs, cost roll-up verification, orphan
