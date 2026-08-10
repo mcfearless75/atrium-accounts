@@ -442,14 +442,17 @@ function parseMoney(s){
   let t = String(s).trim();
   if (t === '') return null;
   t = t.replace(/[£$\u00a0]/g, '').trim();
-  let neg = false;
-  // (1,250.00) — accounting bracket negative. "(-5.00)" states the sign twice and
-  // contradicts itself, so it is refused rather than guessed at.
-  if (/^\(.*\)$/.test(t)){ neg = true; t = t.slice(1, -1).trim(); }
+  // `marks` counts how many times the cell states its sign. Once is notation; twice is a
+  // contradiction. "(-5.00)" was already refused for it, but "(1250.00-)" said the same
+  // thing and quietly returned +1250 — in all three apps.
+  let neg = false, marks = 0;
+  // (1,250.00) — accounting bracket negative.
+  if (/^\(.*\)$/.test(t)){ neg = !neg; marks++; t = t.slice(1, -1).trim(); }
   // Trailing minus and CR/DR suffixes are Sage's own report and ODBC export notation.
   const suf = t.match(/^(.*?)\s*(CR|DR)$/i);
-  if (suf){ t = suf[1].trim(); if (suf[2].toUpperCase() === 'CR') neg = !neg; }
-  if (/-$/.test(t)){ neg = !neg; t = t.slice(0, -1).trim(); }
+  if (suf){ t = suf[1].trim(); marks++; if (suf[2].toUpperCase() === 'CR') neg = !neg; }
+  if (/-$/.test(t)){ neg = !neg; marks++; t = t.slice(0, -1).trim(); }
+  if (marks > 1) return null;
   t = t.replace(/\s/g, '');
   if (t === '') return null;
   if (t.indexOf(',') !== -1){

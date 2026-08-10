@@ -239,11 +239,38 @@ function parseCSV(text){
   return rows;
 }
 
-function parseNum(s){
-  if (s == null || String(s).trim() === '') return null;
-  let t = String(s).replace(/[£$\s]/g,'');
-  let neg = false;
-  if (/^\(.*\)$/.test(t)){ neg = true; t = t.slice(1,-1); }
+// In money mode this is behaviourally identical to sage.html's and migrate.html's
+// parseMoney — the same statements in the same order, because the differences that matter
+// were all in the ordering. Stripping whitespace *before* matching the suffix let "1250 C R"
+// re-form into a CR, and let a bracket negative match across an embedded newline, so the
+// same cell parsed here and was refused there.
+//
+// `money` is off by default, and that is the important half. parseNum is called for
+// quantities and scrap percentages as well as costs, and CR/DR are not only credit and
+// debit — they are also package codes (crate, drum). Reading a qty of "3 DR" as 3 discards
+// the unit and fabricates a number; reading "2 CR" as -2 invents a negative quantity that
+// is not in the file and carries it into the ERPNext import. Only the two genuinely
+// monetary fields opt in.
+function parseNum(s, money){
+  if (s == null) return null;
+  if (typeof s === 'number') return isFinite(s) ? s : null;
+  if (typeof s !== 'string' && typeof s !== 'boolean') return null;
+  let t = String(s).trim();
+  if (t === '') return null;
+  t = t.replace(/[£$ ]/g,'').trim();
+  // `marks` counts how many times the cell states its sign. Once is notation; twice is a
+  // contradiction — "(1250.00-)" was quietly returning +1250 in all three apps, while
+  // "(-5.00)" was refused for saying exactly the same thing twice.
+  let neg = false, marks = 0;
+  if (/^\(.*\)$/.test(t)){ neg = !neg; marks++; t = t.slice(1,-1).trim(); }
+  if (money){
+    const suf = t.match(/^(.*?)\s*(CR|DR)$/i);
+    if (suf){ t = suf[1].trim(); marks++; if (suf[2].toUpperCase() === 'CR') neg = !neg; }
+  }
+  if (/-$/.test(t)){ neg = !neg; marks++; t = t.slice(0,-1).trim(); }
+  if (marks > 1) return null;
+  t = t.replace(/\s/g,'');
+  if (t === '') return null;
   // Commas must be genuine thousands separators. "9,50" is a European decimal comma
   // or a typo — stripping it blindly turns 9.50 into 950, so refuse it instead.
   if (t.indexOf(',') !== -1){
@@ -253,7 +280,7 @@ function parseNum(s){
   if (!/^-?(\d+\.?\d*|\.\d+)$/.test(t)) return null;
   if (neg && t[0] === '-') return null;
   const n = parseFloat(t);
-  return isNaN(n) ? null : (neg ? -n : n);
+  return isFinite(n) ? (neg ? -n : n) : null;
 }
 
 const BOM_ALIASES = {
@@ -311,10 +338,10 @@ function parseBOM(text){
       desc: g('desc'),
       qtyRaw: g('qty'), qty: parseNum(g('qty')),
       uom: g('uom'),
-      costRaw: g('cost'), cost: parseNum(g('cost')),
+      costRaw: g('cost'), cost: parseNum(g('cost'), true),
       status: g('status'), statusAlias: map._alias.status || 'status',
       scrapRaw: g('scrap'), scrap: parseNum(g('scrap')),
-      parentCostRaw: g('parentCost'), parentCost: parseNum(g('parentCost'))
+      parentCostRaw: g('parentCost'), parentCost: parseNum(g('parentCost'), true)
     };
     // Half-populated rows cannot join the graph. Keep them so they can be reported —
     // a row dropped without a count is data loss the user never finds out about.
