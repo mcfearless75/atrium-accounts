@@ -216,6 +216,7 @@ details summary{cursor:pointer;font-size:12px;color:var(--text-dim);margin-top:8
             <option value="fast">Fast — Claude Haiku 4.5</option>
             <option value="balanced">Balanced — Claude Sonnet 5</option>
             <option value="deep">Deep — Claude Opus 5</option>
+            <option value="max">Maximum — Claude Fable 5 (manual only)</option>
           </select>
         </label>
         <span style="font-size:11.5px;color:var(--text-faint)">Auto weighs finding severity, ledger size and how analytical the question is — quick lookups go to the fast model, judgement calls to the deep one.</span>
@@ -567,7 +568,8 @@ function computeStats(txs){
 const MODELS = {
   fast:     {id:'claude-haiku-4-5', label:'Claude Haiku 4.5'},
   balanced: {id:'claude-sonnet-5',  label:'Claude Sonnet 5'},
-  deep:     {id:'claude-opus-5',    label:'Claude Opus 5'}
+  deep:     {id:'claude-opus-5',    label:'Claude Opus 5'},
+  max:      {id:'claude-fable-5',   label:'Claude Fable 5'}   // manual-only: auto never routes here — premium tier for the rare board-level question
 };
 
 function routeModel(choice, question, findings, txCount){

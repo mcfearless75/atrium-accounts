@@ -36,6 +36,16 @@ A sister app in the same file, same rules: single-file, zero-dependency, fully c
 
 Open `sage.html` — it deploys alongside `index.html` on the same Pages site.
 
+## Migration X-Ray — Sage 50 → ERPNext (`migrate.html`)
+
+Third app in the family, built for moving a client off Sage 50 onto self-hosted ERPNext via a parallel run:
+
+- **Convert** — drop Sage 50 exports (customers, suppliers, products, nominal/trial balance; fuzzy header matching, filename-aware entity detection) and get **ERPNext-ready import CSVs** back: Customer/Supplier/Address/Item files, a chart-of-accounts file with Sage nominal ranges mapped to ERPNext root types, and a balanced opening journal. Every export is profiled first — duplicate references, invalid VAT numbers, negative stock, zero-cost valuations, suspense-range balances, unparseable amounts, and an out-of-balance TB are all flagged before anything is imported.
+- **Reconcile** — paste the same period from both systems (trial balances or transaction lists) and get an accountant-ready difference report: per-account deltas, accounts on one side only, transactions missing or mutated. Run weekly during the parallel run; a clean report gates cutover. Downloads as Markdown.
+- **Cutover checklist** — the phase-gated go-live list from the migration plan, with persistent ticks.
+
+Fully client-side like its siblings — safe for live client data.
+
 ## Run it
 
 Open `index.html` (payloads) or `sage.html` (ledgers) in any modern browser. That's it.

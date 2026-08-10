@@ -1,0 +1,821 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Migration X-Ray — Sage → ERPNext</title>
+<meta name="description" content="Client-side migration workbench: convert Sage 50 exports into ERPNext-ready import packs, reconcile the two systems during a parallel run, and track the cutover. Nothing leaves your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117;
+  --bg-raise:#161b22;
+  --bg-raise2:#1c2330;
+  --border:#2d333b;
+  --text:#e6edf3;
+  --text-dim:#8b949e;
+  --text-faint:#606a76;
+  --accent:#58a6ff;
+  --accent-soft:rgba(88,166,255,.14);
+  --high:#f85149;
+  --high-soft:rgba(248,81,73,.14);
+  --med:#d29922;
+  --med-soft:rgba(210,153,34,.14);
+  --info:#3fb950;
+  --info-soft:rgba(63,185,80,.12);
+  --pii:#bc8cff;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --radius:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;display:flex;flex-direction:column;overflow:hidden}
+button{font-family:inherit;font-size:13px;color:var(--text);background:var(--bg-raise2);border:1px solid var(--border);border-radius:var(--radius);padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#0d1117;font-weight:600}
+textarea{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:6px 10px;font-family:var(--mono);font-size:12px;resize:vertical;width:100%}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}
+::-webkit-scrollbar-track{background:transparent}
+
+header{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--bg-raise);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.logo{font-weight:700;font-size:15px;letter-spacing:.3px;white-space:nowrap}
+.logo em{color:var(--accent);font-style:normal}
+.logo small{display:block;font-weight:400;font-size:10px;color:var(--text-faint);letter-spacing:.4px}
+#strip{display:flex;gap:8px;flex:1;flex-wrap:wrap;align-items:center;min-width:0}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);white-space:nowrap}
+.chip b{color:var(--text);font-weight:600}
+.chip.high{border-color:var(--high);background:var(--high-soft);color:var(--high)}
+.chip.high b{color:var(--high)}
+.chip.info{border-color:var(--info);background:var(--info-soft);color:var(--info)}
+.chip.info b{color:var(--info)}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+#tabs{display:flex;border-bottom:1px solid var(--border);background:var(--bg-raise);overflow-x:auto}
+#tabs button{border:none;border-radius:0;background:none;padding:9px 14px;color:var(--text-dim);border-bottom:2px solid transparent;white-space:nowrap}
+#tabs button:hover{color:var(--text)}
+#tabs button.active{color:var(--accent);border-bottom-color:var(--accent)}
+main{flex:1;overflow:auto;padding:16px;max-width:1100px;width:100%;margin:0 auto}
+.tabBody{display:none}
+.tabBody.active{display:block}
+
+.lead{font-size:13px;color:var(--text-dim);line-height:1.6;max-width:78ch;margin-bottom:14px}
+.lead b{color:var(--text)}
+.card{background:var(--bg-raise);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px}
+.card h3{font-size:14px;margin-bottom:8px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.card h3 .tag{font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;padding:1px 8px;border-radius:10px;background:var(--accent-soft);color:var(--accent)}
+.card h3 small{font-weight:400;color:var(--text-dim);font-size:12px}
+.btnRow{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px;align-items:center}
+.issue{font-size:12.5px;padding:5px 0 5px 10px;border-left:3px solid var(--med);color:var(--text-dim);margin:6px 0}
+.issue.high{border-left-color:var(--high)}
+.issue b{color:var(--text)}
+.rowsNote{font-size:12px;color:var(--text-faint);margin-top:6px}
+
+.tblwrap{overflow-x:auto;margin-top:10px}
+table.data{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px}
+table.data th{text-align:left;color:var(--text-dim);font-weight:600;padding:5px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+table.data td{padding:4px 10px;border-bottom:1px solid #1b212b;white-space:nowrap}
+table.data td.num{text-align:right;color:#f2cc60}
+table.data tr.bad td{background:var(--high-soft)}
+table.data tr.bad td.num{color:var(--high)}
+
+.dz{border:2px dashed var(--border);border-radius:var(--radius);padding:18px;text-align:center;color:var(--text-dim);font-size:13px;margin-bottom:12px}
+.dz.hot{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+
+.split{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:860px){.split{grid-template-columns:1fr}}
+.split h4{font-size:13px;margin-bottom:6px}
+.split h4 small{color:var(--text-dim);font-weight:400}
+
+.check{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:6px;font-size:13.5px;line-height:1.5}
+.check:hover{background:var(--bg-raise2)}
+.check input{margin-top:3px}
+.check.done label{color:var(--text-faint);text-decoration:line-through}
+.phaseH{font-size:13px;font-weight:700;color:var(--accent);margin:18px 0 4px;letter-spacing:.4px;text-transform:uppercase}
+.phaseH:first-child{margin-top:0}
+
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--bg-raise2);border:1px solid var(--accent);color:var(--text);border-radius:20px;padding:7px 18px;font-size:13px;z-index:80;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){#toast{transition:none}}
+.privacy{font-size:11.5px;color:var(--text-faint);line-height:1.5;margin-top:8px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Migration <em>X-Ray</em><small>SAGE 50 → ERPNEXT · 100% CLIENT-SIDE</small></div>
+  <div id="strip"></div>
+  <div class="actions">
+    <button id="btnDemo">Demo</button>
+    <button id="btnUpload">Add export file(s)</button>
+    <button id="btnClear">Clear</button>
+    <a href="sage.html" style="font-size:12px">Sage X-Ray →</a>
+    <a href="index.html" style="font-size:12px">JSON X-Ray →</a>
+  </div>
+</header>
+
+<nav id="tabs">
+  <button data-tab="convert" class="active">1 · Convert exports</button>
+  <button data-tab="reconcile">2 · Reconcile parallel run</button>
+  <button data-tab="checklist">3 · Cutover checklist</button>
+</nav>
+
+<main>
+  <div class="tabBody active" id="tab-convert">
+    <p class="lead"><b>Drop your Sage 50 exports here</b> (Customers, Suppliers, Products, Nominal codes / Trial Balance — run them from Sage via File → Export or the report CSV buttons). Each file is auto-detected, profiled for defects, and converted into <b>ERPNext-ready import CSVs</b>. Column layouts target the ERPNext v15 Data Import templates and should be verified against your live instance during Phase 0 — every generated file says what it maps to.</p>
+    <div class="dz" id="dz">Drag &amp; drop CSV export files anywhere on this window — or use “Add export file(s)”, or paste below</div>
+    <textarea id="paste" rows="5" spellcheck="false" placeholder="…or paste one export's CSV here (header row required)"></textarea>
+    <div class="btnRow"><button id="btnPasteAdd" class="primary">Add pasted export</button><span id="pasteInfo" style="font-size:12px;color:var(--text-dim)"></span></div>
+    <div id="entities"></div>
+    <p class="privacy">Privacy by design: no network requests, no storage — conversion happens in this browser tab and downloads go straight to your machine. Safe for live client data.</p>
+  </div>
+
+  <div class="tabBody" id="tab-reconcile">
+    <p class="lead"><b>Parallel-run assurance.</b> Paste the same period from both systems — either <b>trial balances</b> (account, debit/credit or balance) or <b>transaction lists</b> (date, ref, amount). The engine matches account codes and references, and reports every difference: balance deltas, accounts on one side only, transactions missing or mutated. Run it weekly during the parallel run; the accountant signs off a clean report before cutover.</p>
+    <div class="split">
+      <div><h4>Sage side <small>(TB export or audit trail CSV)</small></h4><textarea id="recA" rows="9" spellcheck="false" placeholder="N/C,Name,Debit,Credit&#10;4000,Sales,0.00,45200.00&#10;…"></textarea></div>
+      <div><h4>ERPNext side <small>(TB export or GL entries CSV)</small></h4><textarea id="recB" rows="9" spellcheck="false" placeholder="Account,Debit,Credit&#10;4000 - Sales - CO,0.00,45200.00&#10;…"></textarea></div>
+    </div>
+    <div class="btnRow">
+      <button id="btnRec" class="primary">Reconcile</button>
+      <button id="btnRecDemo">Load demo pair</button>
+      <button id="btnRecDl" disabled>Download report .md</button>
+      <span id="recInfo" style="font-size:12px;color:var(--text-dim)"></span>
+    </div>
+    <div id="recOut"></div>
+  </div>
+
+  <div class="tabBody" id="tab-checklist">
+    <p class="lead"><b>Cutover readiness.</b> The gate list from the migration plan — cutover happens when every box is ticked. Ticks are kept in this browser only (no client data involved).</p>
+    <div id="checks"></div>
+    <div class="btnRow"><button id="btnCkReset">Reset ticks</button><button id="btnCkDl">Download checklist .md</button></div>
+  </div>
+</main>
+
+<div id="toast" role="status"></div>
+<input type="file" id="fileInput" accept=".csv,.txt" multiple style="display:none">
+
+<script>
+(function(){
+'use strict';
+
+/* ================= PURE LAYER (parse + convert + reconcile) ================= */
+
+function normKey(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+
+function parseCSV(text){
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (q){
+      if (c === '"'){ if (text[i+1] === '"'){ cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === ','){ row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r'){
+      if (c === '\r' && text[i+1] === '\n') i++;
+      row.push(cell); cell = '';
+      if (row.length > 1 || row[0] !== '') rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  row.push(cell);
+  if (row.length > 1 || row[0] !== '') rows.push(row);
+  return rows;
+}
+
+function parseMoney(s){
+  if (s == null || String(s).trim() === '') return null;
+  let t = String(s).replace(/[£$\s]/g,'');
+  let neg = false;
+  if (/^\(.*\)$/.test(t)){ neg = true; t = t.slice(1,-1); }
+  t = t.replace(/,/g,'');
+  if (!/^-?(\d+\.?\d*|\.\d+)$/.test(t)) return null;   // strict — "8odd" must not parse as 8
+  const n = parseFloat(t);
+  return isNaN(n) ? null : (neg ? -n : n);
+}
+
+/* ---------- entity detection ---------- */
+
+const ENT = {
+  customers: {
+    label: 'Customers',
+    aliases: {
+      ref:['accountreference','accountref','acref','ac','accountcode','code','customercode'],
+      name:['name','companyname','customername','accountname'],
+      addr1:['addressline1','address1','street1','address'],
+      addr2:['addressline2','address2','street2'],
+      town:['addressline3','town','city'],
+      county:['addressline4','county','state'],
+      postcode:['postcode','postalcode','zip','addressline5'],
+      contact:['contactname','contact'],
+      phone:['telephone','telephonenumber','phone','phonenumber'],
+      email:['email','emailaddress','email1'],
+      vatno:['vatregistrationnumber','vatregnumber','vatnumber','vatno','vatreg'],
+      creditLimit:['creditlimit'],
+      balance:['balance','currentbalance']
+    },
+    signature:['ref','name'], bonus:['creditLimit','vatno','contact']
+  },
+  suppliers: {
+    label: 'Suppliers',
+    aliases: {
+      ref:['accountreference','accountref','acref','ac','accountcode','code','suppliercode'],
+      name:['name','companyname','suppliername','accountname'],
+      addr1:['addressline1','address1','street1','address'],
+      addr2:['addressline2','address2','street2'],
+      town:['addressline3','town','city'],
+      county:['addressline4','county','state'],
+      postcode:['postcode','postalcode','zip','addressline5'],
+      contact:['contactname','contact'],
+      phone:['telephone','telephonenumber','phone','phonenumber'],
+      email:['email','emailaddress','email1'],
+      vatno:['vatregistrationnumber','vatregnumber','vatnumber','vatno','vatreg'],
+      balance:['balance','currentbalance']
+    },
+    signature:['ref','name'], bonus:['vatno','contact']
+  },
+  items: {
+    label: 'Products / stock items',
+    aliases: {
+      code:['stockcode','productcode','itemcode','code','partnumber','partno'],
+      desc:['description','productdescription','itemname','name','details'],
+      category:['category','productcategory','itemgroup','stockcategory','categoryname'],
+      salePrice:['saleprice','sellingprice','price','unitprice','salesprice'],
+      costPrice:['costprice','lastcostprice','purchaseprice','averagecostprice','unitcost'],
+      qty:['quantityinstock','qtyinstock','instock','freestock','quantity','stocklevel'],
+      uom:['unitofsale','unit','uom','unitofmeasure'],
+      reorder:['reorderlevel','reorderqty']
+    },
+    signature:['code','desc'], bonus:['qty','salePrice','costPrice','uom']
+  },
+  nominal: {
+    label: 'Nominal codes / trial balance',
+    aliases: {
+      code:['nc','nominalcode','accountref','accountcode','no','code','account'],
+      name:['name','accountname','description'],
+      debit:['debit','debits','dr'],
+      credit:['credit','credits','cr'],
+      balance:['balance','closingbalance','ytdbalance','ytd','currentbalance']
+    },
+    signature:['code'], bonus:['debit','credit','balance','name']
+  }
+};
+
+function mapHeaders(headers, aliases){
+  const map = {};
+  const norm = headers.map(normKey);
+  for (const field in aliases){
+    for (const a of aliases[field]){
+      const i = norm.indexOf(a);
+      if (i !== -1){ map[field] = i; break; }
+    }
+  }
+  return map;
+}
+
+// Score each entity type against the headers (and the file name, when given);
+// customers and suppliers share a column shape, so the hint is load-bearing there
+function detectEntity(headers, nameHint){
+  const hint = String(nameHint||'').toLowerCase();
+  let best = null, bestScore = 0;
+  for (const key in ENT){
+    const e = ENT[key];
+    const map = mapHeaders(headers, e.aliases);
+    if (!e.signature.every(f => f in map)) continue;
+    let score = Object.keys(map).length + e.bonus.filter(f => f in map).length * 2;
+    if (key === 'suppliers' && (headers.some(h => /supplier/i.test(h)) || /supplier|purchase|creditor/.test(hint))) score += 8;
+    if (key === 'customers' && (headers.some(h => /customer|creditlimit/i.test(normKey(h))) || /customer|sales.?ledger|debtor/.test(hint))) score += 8;
+    if (key === 'items' && /product|stock|item/.test(hint)) score += 4;
+    if (key === 'nominal' && /nominal|trial|tb|account/.test(hint)) score += 4;
+    if (score > bestScore){ bestScore = score; best = {key, map}; }
+  }
+  return best;
+}
+
+/* ---------- converters (Sage rows → ERPNext import shapes) ---------- */
+
+function getRow(row, map){ return f => f in map ? String(row[map[f]] ?? '').trim() : ''; }
+
+function convertParties(rows, map, kind){  // kind: 'Customer' | 'Supplier'
+  const out = [], addresses = [], issues = [], seen = new Map();
+  const push = (sev, text) => issues.push({sev, text});
+  rows.forEach((r, idx) => {
+    const g = getRow(r, map);
+    const ref = g('ref'), name = g('name');
+    if (!name){ push('high', 'Row ' + (idx+2) + ': missing name — skipped'); return; }
+    if (ref){
+      if (seen.has(ref)) push('high', 'Duplicate account reference ' + ref + ' (rows ' + (seen.get(ref)+2) + ' and ' + (idx+2) + ') — ERPNext will reject or merge these');
+      else seen.set(ref, idx);
+    } else push('med', 'Row ' + (idx+2) + ' (' + name + '): no account reference');
+    const vat = g('vatno').replace(/\s/g,'');
+    if (vat && !/^(GB)?\d{9}(\d{3})?$|^(GB)?(GD|HA)\d{3}$/.test(vat))
+      push('med', name + ': VAT number "' + g('vatno') + '" does not look like a UK VAT registration');
+    if (!g('postcode') && g('addr1')) push('med', name + ': address has no postcode');
+    out.push(kind === 'Customer'
+      ? {'Customer Name': name, 'Customer Type': 'Company', 'Customer Group': 'All Customer Groups',
+         'Territory': 'All Territories', 'Tax ID': vat, 'Customer Details': ref ? 'Sage ref: ' + ref : ''}
+      : {'Supplier Name': name, 'Supplier Type': 'Company', 'Supplier Group': 'All Supplier Groups',
+         'Tax ID': vat, 'Supplier Details': ref ? 'Sage ref: ' + ref : ''});
+    if (g('addr1')) addresses.push({
+      'Address Title': name, 'Address Type': 'Billing',
+      'Address Line 1': g('addr1'), 'Address Line 2': g('addr2'),
+      'City/Town': g('town'), 'County': g('county'), 'Postal Code': g('postcode'),
+      'Country': 'United Kingdom', 'Phone': g('phone'), 'Email Address': g('email'),
+      'Link Document Type': kind, 'Link Name': name
+    });
+  });
+  return {out, addresses, issues};
+}
+
+function convertItems(rows, map){
+  const out = [], issues = [], seen = new Map();
+  const push = (sev, text) => issues.push({sev, text});
+  rows.forEach((r, idx) => {
+    const g = getRow(r, map);
+    const code = g('code'), desc = g('desc');
+    if (!code){ push('high', 'Row ' + (idx+2) + ': missing stock code — skipped'); return; }
+    if (seen.has(code)) push('high', 'Duplicate stock code ' + code + ' (rows ' + (seen.get(code)+2) + ' and ' + (idx+2) + ')');
+    else seen.set(code, idx);
+    const qty = parseMoney(g('qty'));
+    const cost = parseMoney(g('costPrice'));
+    const sale = parseMoney(g('salePrice'));
+    if (qty != null && qty < 0) push('high', code + ': negative stock quantity (' + qty + ') — investigate before migrating');
+    if (cost != null && sale != null && sale > 0 && cost > sale) push('med', code + ': cost price ' + cost + ' exceeds sale price ' + sale);
+    if (cost != null && cost === 0 && qty > 0) push('med', code + ': stock on hand with zero cost — valuation will be wrong');
+    let uom = g('uom');
+    if (!uom){ uom = 'Nos'; push('med', code + ': no unit of sale — defaulted to "Nos"'); }
+    out.push({'Item Code': code, 'Item Name': desc || code, 'Item Group': g('category') || 'All Item Groups',
+      'Default Unit of Measure': uom, 'Is Stock Item': 1,
+      'Valuation Rate': cost != null ? cost : '', 'Standard Selling Rate': sale != null ? sale : '',
+      'Opening Stock': qty != null && qty > 0 ? qty : ''});
+  });
+  return {out, issues};
+}
+
+// Sage 50 UK default nominal ranges → ERPNext root types
+function rootTypeFor(code){
+  const n = parseInt(code, 10);
+  if (isNaN(n)) return null;
+  if (n <= 999) return {root:'Asset', parent:'Fixed Assets'};
+  if (n <= 1999) return {root:'Asset', parent:'Current Assets'};
+  if (n <= 2299) return {root:'Liability', parent:'Current Liabilities'};
+  if (n <= 2999) return {root:'Liability', parent:'Long Term Liabilities'};
+  if (n <= 3999) return {root:'Equity', parent:'Capital and Reserves'};
+  if (n <= 4999) return {root:'Income', parent:'Sales'};
+  if (n <= 5999) return {root:'Expense', parent:'Purchases'};
+  if (n <= 6999) return {root:'Expense', parent:'Direct Expenses'};
+  if (n <= 8999) return {root:'Expense', parent:'Overheads'};
+  return {root:'Expense', parent:'Suspense / Mispostings'};
+}
+
+function convertNominal(rows, map){
+  const coa = [], journal = [], issues = [];
+  const push = (sev, text) => issues.push({sev, text});
+  let dr = 0, cr = 0;
+  const seen = new Map();
+  rows.forEach((r, idx) => {
+    const g = getRow(r, map);
+    const code = g('code');
+    if (!code){ push('med', 'Row ' + (idx+2) + ': no account code — skipped'); return; }
+    if (seen.has(code)){ push('high', 'Duplicate nominal code ' + code); }
+    else seen.set(code, idx);
+    const rt = rootTypeFor(code);
+    if (!rt){ push('med', 'Account ' + code + ': non-numeric code — assign a root type manually'); }
+    else if (parseInt(code,10) >= 9000) push('med', 'Account ' + code + ' (' + g('name') + ') is in the Sage suspense/mispostings range — resolve its balance before cutover rather than migrating it');
+    coa.push({'Account Number': code, 'Account Name': g('name') || 'Account ' + code,
+      'Root Type': rt ? rt.root : '', 'Suggested Parent': rt ? rt.parent : '', 'Is Group': 0});
+    for (const f of ['debit','credit','balance'])
+      if (g(f) !== '' && parseMoney(g(f)) == null)
+        push('high', 'Account ' + code + ': ' + f + ' value "' + g(f) + '" is not a readable amount — this line is excluded from the opening journal until fixed');
+    let d = parseMoney(g('debit')), c = parseMoney(g('credit'));
+    if (d == null && c == null){
+      const b = parseMoney(g('balance'));
+      if (b != null){ if (b >= 0){ d = b; c = 0; } else { d = 0; c = -b; } }
+    }
+    if (d || c){
+      dr += d || 0; cr += c || 0;
+      journal.push({'Account': code + (g('name') ? ' - ' + g('name') : ''),
+        'Debit': d ? d.toFixed(2) : '', 'Credit': c ? c.toFixed(2) : '',
+        'Remarks': 'Opening balance migrated from Sage 50'});
+    }
+  });
+  const delta = Math.round((dr - cr) * 100) / 100;
+  if (journal.length && Math.abs(delta) > 0.005)
+    push('high', 'Opening balances do not balance: debits ' + dr.toFixed(2) + ' vs credits ' + cr.toFixed(2) +
+      ' (difference ' + delta.toFixed(2) + '). The opening journal will not post until this is resolved — usually a missing retained-earnings or debtors/creditors control line in the export.');
+  return {coa, journal, issues, totals:{dr, cr, delta}};
+}
+
+/* ---------- reconciliation ---------- */
+
+// Extract a leading account code from "4000 - Sales - CO" style ERPNext names
+function accountCode(s){
+  const m = String(s||'').trim().match(/^(\d{3,})/);
+  return m ? m[1] : String(s||'').trim();
+}
+
+const REC_ALIASES = {
+  code:['nc','nominalcode','account','accountcode','accountref','no','code','accountname'],
+  name:['name','accountname','description'],
+  debit:['debit','debits','dr'],
+  credit:['credit','credits','cr'],
+  balance:['balance','closingbalance','net','amount','netamount'],
+  date:['date','postingdate','transdate','transactiondate'],
+  ref:['ref','reference','voucherno','vouchernumber','invref']
+};
+
+function parseSide(text){
+  const rows = parseCSV(String(text||'').trim());
+  if (rows.length < 2) return {error:'Need a header row plus data rows.'};
+  const map = mapHeaders(rows[0], REC_ALIASES);
+  if (!('code' in map)) return {error:'No account/code column found. Headers seen: ' + rows[0].join(', ')};
+  const isTx = ('date' in map) && ('ref' in map);
+  const accounts = new Map();   // code → net (debit positive)
+  const txKeys = new Map();     // "ref|amount" → count (transaction mode)
+  for (const r of rows.slice(1)){
+    const g = getRow(r, map);
+    const code = accountCode(g('code'));
+    if (!code) continue;
+    let d = parseMoney(g('debit')), c = parseMoney(g('credit'));
+    let net;
+    if (d != null || c != null) net = (d || 0) - (c || 0);
+    else net = parseMoney(g('balance')) || 0;
+    accounts.set(code, Math.round(((accounts.get(code) || 0) + net) * 100) / 100);
+    if (isTx){
+      const amt = Math.abs(net).toFixed(2);
+      const k = g('ref') + '|' + amt;
+      txKeys.set(k, (txKeys.get(k) || 0) + 1);
+    }
+  }
+  return {accounts, txKeys, isTx, rowCount: rows.length - 1};
+}
+
+function reconcile(textA, textB){
+  const A = parseSide(textA), B = parseSide(textB);
+  if (A.error) return {error:'Sage side: ' + A.error};
+  if (B.error) return {error:'ERPNext side: ' + B.error};
+  const codes = [...new Set([...A.accounts.keys(), ...B.accounts.keys()])].sort();
+  const lines = [];
+  let matched = 0, deltas = 0, onlyA = 0, onlyB = 0;
+  for (const code of codes){
+    const a = A.accounts.has(code) ? A.accounts.get(code) : null;
+    const b = B.accounts.has(code) ? B.accounts.get(code) : null;
+    const delta = (a == null || b == null) ? null : Math.round((a - b) * 100) / 100;
+    let status;
+    if (a == null){ status = 'only-erpnext'; onlyB++; }
+    else if (b == null){ status = 'only-sage'; onlyA++; }
+    else if (Math.abs(delta) > 0.005){ status = 'delta'; deltas++; }
+    else { status = 'ok'; matched++; }
+    lines.push({code, a, b, delta, status});
+  }
+  // transaction-level diff when both sides carry date+ref
+  let txDiff = null;
+  if (A.isTx && B.isTx){
+    const missingInB = [], missingInA = [];
+    for (const [k, n] of A.txKeys){
+      const m = B.txKeys.get(k) || 0;
+      if (m < n) missingInB.push({key:k, count:n - m});
+    }
+    for (const [k, n] of B.txKeys){
+      const m = A.txKeys.get(k) || 0;
+      if (m < n) missingInA.push({key:k, count:n - m});
+    }
+    txDiff = {missingInB, missingInA};
+  }
+  const clean = deltas === 0 && onlyA === 0 && onlyB === 0 &&
+    (!txDiff || (txDiff.missingInB.length === 0 && txDiff.missingInA.length === 0));
+  return {lines, txDiff, clean, stats:{matched, deltas, onlyA, onlyB, rowsA:A.rowCount, rowsB:B.rowCount}};
+}
+
+/* ---------- CSV emit ---------- */
+
+function toCSV(objs){
+  if (!objs.length) return '';
+  const headers = Object.keys(objs[0]);
+  const escCell = v => { v = String(v ?? ''); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; };
+  return headers.map(escCell).join(',') + '\n' +
+    objs.map(o => headers.map(h => escCell(o[h])).join(',')).join('\n') + '\n';
+}
+
+/* ---------- demo data ---------- */
+
+const DEMO_FILES = {
+  'customers.csv': `Account Reference,Name,Address Line 1,Address Line 2,Town,County,Postcode,Contact Name,Telephone,VAT Registration Number,Credit Limit,Balance
+ACME01,Acme Lending Ltd,1 Fenwick Street,,Liverpool,Merseyside,L2 7NA,J Moores,0151 496 0101,GB123456789,25000.00,5375.00
+BLUE02,Bluebird Finance plc,20 Chapel Street,Suite 4,Liverpool,Merseyside,L3 9AG,A Field,0151 496 0202,GB987654321,50000.00,11270.00
+CRED03,Crediton Analytics,Unit 9 Science Park,,Manchester,,M1 5GD,S Patel,0161 496 0303,12345678,10000.00,9630.00
+NEWCO4,Newco Decisioning,5 Dale Street,,Liverpool,Merseyside,,R Njoku,0151 496 0404,,5000.00,1240.00
+ACME01,Acme Lending Ltd (dup),1 Fenwick Street,,Liverpool,Merseyside,L2 7NA,J Moores,0151 496 0101,GB123456789,25000.00,0.00
+,Orphan Trading,No Ref House,,Birkenhead,Merseyside,CH41 5AL,,0151 496 0505,GB111222333,1000.00,0.00
+`,
+  'suppliers.csv': `Account Reference,Name,Address Line 1,Town,Postcode,Contact Name,Telephone,VAT Registration Number,Balance
+SUPP01,Northern Cloud Hosting Ltd,Data House,Manchester,M4 6DE,K Adams,0161 496 0606,GB222333444,2159.00
+SUPP02,DataFeed Services plc,Exchange Flags,Liverpool,L2 3YL,,0151 496 0707,GB333444555,11680.00
+SUPP03,City Catering Co,Baltic Triangle,Liverpool,L1 0AH,M Hughes,0151 496 0808,,325.50
+SUPP05,Talent Partners LLP,Old Hall Street,Liverpool,L3 9PP,D Okafor,0151 496 0909,GB55566677,24500.00
+`,
+  'products.csv': `Stock Code,Description,Category,Sale Price,Cost Price,Quantity in Stock,Unit of Sale
+XR-LIC-01,X-Ray platform licence (annual),Licences,5000.00,0.00,12,Each
+XR-SUP-01,Support plan (monthly),Services,450.00,180.00,0,Each
+HW-TERM-1,Payment terminal,Hardware,299.00,340.00,15,Each
+HW-CBL-05,Terminal cable 5m,Hardware,12.50,4.20,-3,
+XR-LIC-01,X-Ray platform licence (dup),Licences,5000.00,1500.00,0,Each
+TR-DAY-01,Training day,Services,850.00,300.00,4,Day
+`,
+  'nominal_tb.csv': `N/C,Name,Debit,Credit
+0030,Office Equipment,12400.00,
+1100,Debtors Control Account,27515.00,
+1200,Bank Current Account,18930.50,
+2100,Creditors Control Account,,38664.50
+2200,VAT Liability,,6212.00
+2202,VAT on Sales Suspense,,fifty
+3000,Ordinary Share Capital,,100.00
+3200,Retained Earnings,,150.00
+4000,Sales - Consultancy,,45200.00
+5000,Cost of Sales,21350.00,
+7100,Rent,4500.00,
+7901,Bank Charges,131.00,
+9998,Suspense Account,5400.00,
+`
+};
+
+const REC_DEMO_A = `N/C,Name,Debit,Credit
+0030,Office Equipment,12400.00,
+1100,Debtors Control Account,27515.00,
+1200,Bank Current Account,18930.50,
+2100,Creditors Control Account,,38664.50
+2200,VAT Liability,,6212.00
+4000,Sales - Consultancy,,45200.00
+5000,Cost of Sales,21350.00,
+7100,Rent,4500.00,
+7901,Bank Charges,131.00,
+`;
+const REC_DEMO_B = `Account,Debit,Credit
+0030 - Office Equipment - BW,12400.00,0.00
+1100 - Debtors Control Account - BW,27515.00,0.00
+1200 - Bank Current Account - BW,18930.50,0.00
+2100 - Creditors Control Account - BW,0.00,38664.50
+2200 - VAT Liability - BW,0.00,6112.00
+4000 - Sales - Consultancy - BW,0.00,45200.00
+5000 - Cost of Sales - BW,21250.00,0.00
+7100 - Rent - BW,4500.00,0.00
+`;
+
+const CHECKLIST = [
+  ['Phase 0 — Discovery', [
+    'Sage contract end date and notice period confirmed',
+    'Full Sage exports run: customers, suppliers, products, nominal/TB, audit trail',
+    'Accountant briefed on parallel-run and sign-off plan',
+    'ERPNext evaluation instance reviewed with client'
+  ]],
+  ['Phase 1 — Build', [
+    'Production instance hardened; automated encrypted backups running',
+    'Restore procedure tested from a real backup',
+    'Chart of accounts imported and reviewed against Sage nominal list',
+    'Customers, suppliers, items imported; row counts match exports',
+    'VAT codes configured; HMRC MTD credentials working in sandbox',
+    'Invoice templates match current client-facing documents'
+  ]],
+  ['Phase 2 — Parallel run', [
+    'Both systems posting the same transactions',
+    'Weekly reconciliation report clean (or every delta explained)',
+    'One full VAT quarter computed in both systems with matching boxes',
+    'Accountant sign-off on the parallel VAT quarter recorded'
+  ]],
+  ['Phase 3 — Cutover', [
+    'Opening balances locked in ERPNext; final reconciliation clean',
+    'Full Sage dataset exported and archived (6-year VAT retention)',
+    'Users trained; day-one support plan agreed',
+    'Sage renewal cancelled in writing before notice deadline'
+  ]]
+];
+
+/* ================= DOM LAYER ================= */
+if (typeof document === 'undefined') return;
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt2 = n => n == null ? '—' : n.toLocaleString('en-GB',{minimumFractionDigits:2, maximumFractionDigits:2});
+
+function toast(msg){
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._h); toast._h = setTimeout(() => t.classList.remove('show'), 1900);
+}
+function download(name, content, type){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], {type: type || 'text/csv'}));
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+let LOADED = [];   // {name, entityKey, rows, map, result}
+let REC_REPORT = '';
+
+function addExport(name, text){
+  const rows = parseCSV(String(text||'').trim());
+  if (rows.length < 2){ toast(name + ': needs a header row plus data'); return; }
+  const det = detectEntity(rows[0], name);
+  if (!det){ toast(name + ': could not recognise this as a Sage customers / suppliers / products / nominal export'); return; }
+  const dataRows = rows.slice(1);
+  let result;
+  if (det.key === 'customers') result = convertParties(dataRows, det.map, 'Customer');
+  else if (det.key === 'suppliers') result = convertParties(dataRows, det.map, 'Supplier');
+  else if (det.key === 'items') result = convertItems(dataRows, det.map);
+  else result = convertNominal(dataRows, det.map);
+  LOADED = LOADED.filter(l => l.entityKey !== det.key);   // latest file of a type wins
+  LOADED.push({name, entityKey: det.key, rowCount: dataRows.length, result});
+  renderEntities(); renderStrip();
+  toast(name + ' → ' + ENT[det.key].label);
+}
+
+function renderStrip(){
+  let issues = 0, high = 0;
+  for (const l of LOADED){ issues += l.result.issues.length; high += l.result.issues.filter(i => i.sev === 'high').length; }
+  $('strip').innerHTML = LOADED.length
+    ? '<span class="chip"><b>' + LOADED.length + '</b> export' + (LOADED.length>1?'s':'') + ' loaded</span>' +
+      (high ? '<span class="chip high"><b>' + high + '</b> blocking issues</span>' : '') +
+      (issues - high > 0 ? '<span class="chip"><b>' + (issues - high) + '</b> warnings</span>' : '') +
+      (!issues ? '<span class="chip info"><b>clean</b></span>' : '')
+    : '';
+}
+
+function renderEntities(){
+  const host = $('entities');
+  if (!LOADED.length){ host.innerHTML = ''; return; }
+  let h = '';
+  for (const l of LOADED){
+    const e = ENT[l.entityKey], r = l.result;
+    h += '<div class="card"><h3><span class="tag">' + esc(e.label) + '</span>' + esc(l.name) +
+      ' <small>' + l.rowCount + ' rows in export</small></h3>';
+    if (l.entityKey === 'customers' || l.entityKey === 'suppliers'){
+      h += '<div class="btnRow">' +
+        btn(l.entityKey, 'main', (l.entityKey === 'customers' ? 'customer' : 'supplier') + '_import.csv → ERPNext ' + (l.entityKey === 'customers' ? 'Customer' : 'Supplier') + ' (' + r.out.length + ')') +
+        (r.addresses.length ? btn(l.entityKey, 'addr', 'addresses_import.csv → ERPNext Address (' + r.addresses.length + ')') : '') +
+        '</div>';
+    } else if (l.entityKey === 'items'){
+      h += '<div class="btnRow">' + btn('items', 'main', 'item_import.csv → ERPNext Item (' + r.out.length + ')') + '</div>';
+    } else {
+      h += '<div class="btnRow">' +
+        btn('nominal', 'coa', 'chart_of_accounts.csv → CoA importer (' + r.coa.length + ' accounts)') +
+        (r.journal.length ? btn('nominal', 'journal', 'opening_journal.csv → Journal Entry (' + r.journal.length + ' lines)') : '') +
+        '</div>';
+      if (r.journal.length){
+        h += '<p class="rowsNote">Opening balances: debits ' + fmt2(r.totals.dr) + ' · credits ' + fmt2(r.totals.cr) +
+          (Math.abs(r.totals.delta) > 0.005 ? ' · <b style="color:var(--high)">out of balance by ' + fmt2(Math.abs(r.totals.delta)) + '</b>' : ' · balanced ✓') + '</p>';
+      }
+    }
+    if (r.issues.length){
+      h += r.issues.slice(0, 30).map(i => '<div class="issue ' + i.sev + '">' + esc(i.text) + '</div>').join('');
+      if (r.issues.length > 30) h += '<p class="rowsNote">+' + (r.issues.length - 30) + ' more issues</p>';
+    } else {
+      h += '<div class="issue" style="border-left-color:var(--info)">No defects found in this export.</div>';
+    }
+    h += '</div>';
+  }
+  host.innerHTML = h;
+  function btn(ent, part, label){
+    return '<button data-dl="' + ent + ':' + part + '">⬇ ' + esc(label) + '</button>';
+  }
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-dl]');
+  if (!b) return;
+  const [ent, part] = b.dataset.dl.split(':');
+  const l = LOADED.find(x => x.entityKey === ent);
+  if (!l) return;
+  const r = l.result;
+  if (part === 'main') download(ent === 'customers' ? 'customer_import.csv' : ent === 'suppliers' ? 'supplier_import.csv' : 'item_import.csv', toCSV(r.out));
+  else if (part === 'addr') download('addresses_import.csv', toCSV(r.addresses));
+  else if (part === 'coa') download('chart_of_accounts.csv', toCSV(r.coa));
+  else if (part === 'journal') download('opening_journal.csv', toCSV(r.journal));
+  toast('Download started');
+});
+
+/* tabs */
+$('tabs').addEventListener('click', e => {
+  const b = e.target.closest('button[data-tab]');
+  if (!b) return;
+  document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('active', x === b));
+  document.querySelectorAll('.tabBody').forEach(x => x.classList.toggle('active', x.id === 'tab-' + b.dataset.tab));
+});
+
+/* inputs */
+$('btnPasteAdd').addEventListener('click', () => {
+  const t = $('paste').value.trim();
+  if (!t){ toast('Paste an export first'); return; }
+  addExport('pasted export', t);
+  $('paste').value = '';
+});
+$('btnUpload').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', e => { [...e.target.files].forEach(readFile); e.target.value = ''; });
+function readFile(file){
+  const rd = new FileReader();
+  rd.onload = () => addExport(file.name, rd.result);
+  rd.readAsText(file);
+}
+let dragDepth = 0;
+window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; $('dz').classList.add('hot'); });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0){ dragDepth = 0; $('dz').classList.remove('hot'); } });
+window.addEventListener('drop', e => {
+  e.preventDefault(); dragDepth = 0; $('dz').classList.remove('hot');
+  [...e.dataTransfer.files].forEach(readFile);
+});
+$('btnClear').addEventListener('click', () => { LOADED = []; renderEntities(); renderStrip(); toast('Cleared'); });
+$('btnDemo').addEventListener('click', () => {
+  LOADED = [];
+  for (const name in DEMO_FILES) addExport(name, DEMO_FILES[name]);
+  $('recA').value = REC_DEMO_A; $('recB').value = REC_DEMO_B;
+  toast('Demo exports loaded — deliberately dirty');
+});
+
+/* reconcile */
+$('btnRecDemo').addEventListener('click', () => { $('recA').value = REC_DEMO_A; $('recB').value = REC_DEMO_B; toast('Demo pair loaded'); });
+$('btnRec').addEventListener('click', () => {
+  const r = reconcile($('recA').value, $('recB').value);
+  const host = $('recOut');
+  if (r.error){ host.innerHTML = '<div class="issue high">' + esc(r.error) + '</div>'; $('btnRecDl').disabled = true; return; }
+  const s = r.stats;
+  let h = '<div class="card"><h3>' + (r.clean
+      ? '<span class="tag" style="background:var(--info-soft);color:var(--info)">CLEAN</span>Systems agree'
+      : '<span class="tag" style="background:var(--high-soft);color:var(--high)">DIFFERENCES</span>Reconciliation differences found') +
+    '<small>' + s.matched + ' accounts matched · ' + s.deltas + ' deltas · ' + s.onlyA + ' Sage-only · ' + s.onlyB + ' ERPNext-only</small></h3>';
+  h += '<div class="tblwrap"><table class="data"><tr><th>Account</th><th style="text-align:right">Sage net</th><th style="text-align:right">ERPNext net</th><th style="text-align:right">Delta</th><th>Status</th></tr>';
+  const mdLines = ['# Parallel-run reconciliation report','', 'Accounts matched: ' + s.matched + ' · deltas: ' + s.deltas + ' · Sage-only: ' + s.onlyA + ' · ERPNext-only: ' + s.onlyB, '', '| Account | Sage | ERPNext | Delta | Status |','|---|---|---|---|---|'];
+  for (const ln of r.lines){
+    const bad = ln.status !== 'ok';
+    const statusLabel = ln.status === 'ok' ? '✓' : ln.status === 'delta' ? 'DELTA' : ln.status === 'only-sage' ? 'missing in ERPNext' : 'missing in Sage';
+    h += '<tr' + (bad ? ' class="bad"' : '') + '><td>' + esc(ln.code) + '</td>' +
+      '<td class="num">' + fmt2(ln.a) + '</td><td class="num">' + fmt2(ln.b) + '</td>' +
+      '<td class="num">' + (ln.delta == null ? '—' : fmt2(ln.delta)) + '</td><td>' + statusLabel + '</td></tr>';
+    mdLines.push('| ' + ln.code + ' | ' + fmt2(ln.a) + ' | ' + fmt2(ln.b) + ' | ' + (ln.delta == null ? '—' : fmt2(ln.delta)) + ' | ' + statusLabel + ' |');
+  }
+  h += '</table></div>';
+  if (r.txDiff){
+    const t = r.txDiff;
+    h += '<h3 style="margin-top:14px">Transaction-level differences</h3>';
+    if (!t.missingInB.length && !t.missingInA.length) h += '<div class="issue" style="border-left-color:var(--info)">Every (reference, amount) pair matches on both sides.</div>';
+    for (const m of t.missingInB.slice(0,20)) h += '<div class="issue high">In Sage, not in ERPNext: ' + esc(m.key.replace('|',' · £')) + (m.count>1 ? ' ×' + m.count : '') + '</div>';
+    for (const m of t.missingInA.slice(0,20)) h += '<div class="issue">In ERPNext, not in Sage: ' + esc(m.key.replace('|',' · £')) + (m.count>1 ? ' ×' + m.count : '') + '</div>';
+  }
+  h += '</div>';
+  host.innerHTML = h;
+  REC_REPORT = mdLines.join('\n') + '\n';
+  $('btnRecDl').disabled = false;
+  $('recInfo').textContent = r.clean ? 'Clean — file this report with the week\'s sign-off.' : 'Investigate every non-✓ row before cutover.';
+});
+$('btnRecDl').addEventListener('click', () => download('reconciliation-report.md', REC_REPORT, 'text/markdown'));
+
+/* checklist */
+const CK_KEY = 'migration_xray_checks_v1';
+function renderChecks(){
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(CK_KEY) || '{}'); } catch(e){}
+  let h = '', n = 0;
+  for (const [phase, items] of CHECKLIST){
+    h += '<div class="phaseH">' + esc(phase) + '</div>';
+    for (const item of items){
+      const id = 'ck' + n++;
+      const on = !!saved[id];
+      h += '<div class="check' + (on ? ' done' : '') + '"><input type="checkbox" id="' + id + '"' + (on ? ' checked' : '') + '><label for="' + id + '">' + esc(item) + '</label></div>';
+    }
+  }
+  $('checks').innerHTML = h;
+}
+$('checks').addEventListener('change', e => {
+  if (e.target.type !== 'checkbox') return;
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(CK_KEY) || '{}'); } catch(err){}
+  saved[e.target.id] = e.target.checked;
+  localStorage.setItem(CK_KEY, JSON.stringify(saved));
+  e.target.closest('.check').classList.toggle('done', e.target.checked);
+});
+$('btnCkReset').addEventListener('click', () => { localStorage.removeItem(CK_KEY); renderChecks(); toast('Checklist reset'); });
+$('btnCkDl').addEventListener('click', () => {
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(CK_KEY) || '{}'); } catch(e){}
+  let n = 0;
+  const md = ['# Cutover checklist — Sage 50 → ERPNext',''];
+  for (const [phase, items] of CHECKLIST){
+    md.push('## ' + phase);
+    for (const item of items) md.push('- [' + (saved['ck' + n++] ? 'x' : ' ') + '] ' + item);
+    md.push('');
+  }
+  download('cutover-checklist.md', md.join('\n'), 'text/markdown');
+});
+renderChecks();
+
+})();
+</script>
+</body>
+</html>
