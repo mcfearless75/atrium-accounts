@@ -5,8 +5,9 @@ Project brief for Claude Code. Read this fully before making changes.
 ## What this is
 
 **Atrium** is a suite of four single-file, zero-dependency, fully client-side workbenches
-sharing one product shell. Each loads an export, scans it for defects in plain English, and
-emits whatever files the next step needs. Nothing is uploaded; nothing is stored server-side.
+sharing one product shell, plus a plain-English help guide. Each workbench loads an export,
+scans it for defects in plain English, and emits whatever files the next step needs. Nothing
+is uploaded; nothing is stored server-side.
 
 The original member — JSON X-Ray (`json.html`) — is a JSON inspection app for
 data/decisioning professionals (credit risk, bureau payloads, API traces). It goes beyond
@@ -18,6 +19,7 @@ data/decisioning professionals (credit risk, bureau payloads, API traces). It go
 
 ```
 index.html                    ← Atrium home dashboard (module cards + migration workflow)
+help.html                     ← Atrium Help — task-first "how do I…?" guide for the client
 json.html                     ← JSON X-Ray — Payload Workbench (was index.html)
 sage.html                     ← Sage X-Ray — Ledger Workbench (same one-file rules)
 migrate.html                  ← Migration X-Ray — Sage 50 → ERPNext (same one-file rules)
@@ -32,11 +34,37 @@ README.md                     ← user-facing docs + Pages setup
 ## The product shell
 
 Every module carries an identical `.appbar` immediately after `<body>`: brand link to
-`index.html`, nav across all five pages with `class="on"` on the current one, and a
+`index.html`, nav across all six pages with `class="on"` on the current one, and a
 `100% CLIENT-SIDE` marker. The markup and its CSS block are **duplicated verbatim** in each
 file — that is the cost of the single-file constraint, and it is deliberate. If you change
-the nav, change it in all five files and re-check that each page marks the right link `on`.
+the nav, change it in all six files and re-check that each page marks the right link `on`.
 `index.html` is a static page with no script block; it must stay that way.
+
+## `help.html` — the page the client actually lives in
+
+The four X-Ray tools are for the migration; `help.html` is for the person whose day is
+invoices. It is task-first and written for a non-specialist: every entry is phrased as a
+job ("Refund a customer"), not a feature, and each carries a `was` line saying what the
+same job was called in Sage — the hard part of a migration is not the new buttons, it is
+not knowing the new word.
+
+Rules for it:
+
+- **Search matches the whole entry**, not the title. Typing "refund" must reach the credit
+  note entry, and "money in" must reach payments. Add plain-English synonyms to `tags`
+  rather than renaming entries to match search terms.
+- **Steps say what to search for, not which menu to click.** ERPNext's sidebar wording
+  moves between versions; its search bar does not. This also happens to be the fastest
+  route for a non-technical user.
+- **Do not invent precise UI paths.** Anything version-specific must be verifiable, or
+  phrased at the level of the concept. The footer says this outright.
+- `localStorage` under `atrium_help_v1` holds **step ticks only** — never client data.
+- Content lives in the `TASKS` / `GLOSSARY` / `CATS` consts above the DOM-layer marker,
+  so it stays greppable and could be tested headlessly.
+
+Smoke test: `/` focuses search; searching "refund" opens the credit-note entry; a tick
+survives reload; `help.html#vat` deep-links open; an unmatched search shows the empty
+state; no horizontal overflow at 1280px.
 
 Read the `xray-conventions` skill before modifying any app; read `sage-migration` before
 touching migrate.html or anything Sage/ERPNext. After pure-layer changes, run the

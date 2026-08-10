@@ -62,7 +62,7 @@ A roll-up is either complete or reported as incomplete — a missing component c
 
 ## Run it
 
-Open `index.html` — the Atrium home dashboard — and pick a module: `sage.html` (ledgers), `bom.html` (bills of materials), `migrate.html` (Sage → ERPNext migration) or `json.html` (payloads). Any modern browser. That's it.
+Open `index.html` — the Atrium home dashboard — and pick a module: `sage.html` (ledgers), `bom.html` (bills of materials), `migrate.html` (Sage → ERPNext migration), `json.html` (payloads), or `help.html` (the plain-English how-do-I guide). Any modern browser. That's it.
 
 ## Deploy to GitHub Pages
 
