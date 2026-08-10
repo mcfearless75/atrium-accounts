@@ -47,9 +47,21 @@ Third app in the family, built for moving a client off Sage 50 onto self-hosted 
 
 Fully client-side like its siblings — safe for live client data.
 
+## BOM X-Ray — Bill of Materials Workbench (`bom.html`)
+
+Fourth app in the family, for inspecting multi-level bills of materials from Sage Manufacturing, ERPNext or plain spreadsheets:
+
+- **Overview** — top-level products, sub-assemblies, purchased parts, structure depth, what proportion is fully costed, and a ranked rolled-up cost per product with the cost make-up of the most expensive one.
+- **Structure** — an explodable tree: quantities per parent, scrap factors, rolled-up cost at every level, with obsolete parts and circular branches called out inline.
+- **15 checks** — circular references, one part carrying conflicting units or costs, unreadable/negative/zero quantities, purchased parts with no cost or costed at zero, standard cost drifting from the rolled-up cost, obsolete parts still on live BOMs, duplicate component lines, missing units of measure and descriptions, deep nesting and single-component assemblies.
+- **Where used** — every parent that consumes a component, at any level, with the full path to the top. Check this before changing or discontinuing a part.
+- **ERPNext export** — `bom_import.csv` and `bom_items_import.csv`, plus a Markdown findings report.
+
+A roll-up is either complete or reported as incomplete — a missing component cost never silently becomes zero, because an understated product cost that looks authoritative is worse than an obvious gap.
+
 ## Run it
 
-Open `index.html` (payloads) or `sage.html` (ledgers) in any modern browser. That's it.
+Open `index.html` (payloads), `sage.html` (ledgers), `migrate.html` (Sage → ERPNext migration) or `bom.html` (bills of materials) in any modern browser. That's it.
 
 ## Deploy to GitHub Pages
 

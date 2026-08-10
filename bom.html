@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BOM X-Ray — Bill of Materials Workbench</title>
+<meta name="description" content="Client-side bill of materials inspection: circular references, cost roll-up verification, orphan and obsolete components, where-used analysis, and ERPNext BOM import packs. Nothing leaves your browser.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117; --bg-raise:#161b22; --bg-raise2:#1c2330; --border:#2d333b;
+  --text:#e6edf3; --text-dim:#8b949e; --text-faint:#606a76;
+  --accent:#58a6ff; --accent-soft:rgba(88,166,255,.14);
+  --high:#f85149; --high-soft:rgba(248,81,73,.14);
+  --med:#d29922; --med-soft:rgba(210,153,34,.14);
+  --info:#3fb950; --info-soft:rgba(63,185,80,.12);
+  --chart-a:#3d8bdf; --chart-b:#b3841a;
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --radius:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;display:flex;flex-direction:column;overflow:hidden}
+button{font-family:inherit;font-size:13px;color:var(--text);background:var(--bg-raise2);border:1px solid var(--border);border-radius:var(--radius);padding:6px 12px;cursor:pointer}
+button:hover{border-color:var(--accent)}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#0d1117;font-weight:600}
+input[type=text],textarea{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);padding:6px 10px;font-size:13px}
+textarea{font-family:var(--mono);font-size:12px;resize:vertical;width:100%}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:6px}
+::-webkit-scrollbar-track{background:transparent}
+
+header{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--bg-raise);border-bottom:1px solid var(--border);flex-wrap:wrap}
+.logo{font-weight:700;font-size:15px;white-space:nowrap}
+.logo em{color:var(--accent);font-style:normal}
+.logo small{display:block;font-weight:400;font-size:10px;color:var(--text-faint);letter-spacing:.4px}
+#strip{display:flex;gap:8px;flex:1;flex-wrap:wrap;align-items:center;min-width:0}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 10px;border-radius:20px;border:1px solid var(--border);background:var(--bg);color:var(--text-dim);white-space:nowrap}
+.chip b{color:var(--text);font-weight:600}
+.chip.high{border-color:var(--high);background:var(--high-soft);color:var(--high)}
+.chip.high b{color:var(--high)}
+.chip.med{border-color:var(--med);background:var(--med-soft);color:var(--med)}
+.chip.med b{color:var(--med)}
+.chip.info{border-color:var(--info);background:var(--info-soft);color:var(--info)}
+.chip.info b{color:var(--info)}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+#views{display:flex;align-items:center;gap:4px;padding:0 16px;background:var(--bg-raise);border-bottom:1px solid var(--border);flex-wrap:wrap}
+#views button{border:none;border-radius:0;background:none;padding:10px 16px;color:var(--text-dim);border-bottom:2px solid transparent;font-weight:600;font-size:13.5px}
+#views button:hover{color:var(--text)}
+#views button.active{color:var(--accent);border-bottom-color:var(--accent)}
+.viewHint{font-size:11.5px;color:var(--text-faint);margin-left:10px}
+@media (max-width:760px){.viewHint{display:none}}
+
+.view{flex:1;overflow:auto;display:none}
+.view.on{display:block}
+.inner{max-width:1180px;margin:0 auto;padding:20px 18px 60px}
+.empty{color:var(--text-dim);font-size:14px;text-align:center;padding:60px 20px;line-height:1.7}
+
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:18px}
+.kpi{background:var(--bg-raise);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+.kpi .lab{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-faint);font-weight:600}
+.kpi .val{font-family:var(--mono);font-size:24px;font-weight:600;margin-top:6px;font-variant-numeric:tabular-nums}
+.kpi .sub{font-size:11.5px;color:var(--text-dim);margin-top:3px}
+.kpi.bad .val{color:var(--high)}
+.kpi.good .val{color:var(--info)}
+
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media (max-width:900px){.grid2{grid-template-columns:1fr}}
+.panel{background:var(--bg-raise);border:1px solid var(--border);border-radius:10px;padding:14px 16px;min-width:0}
+.panel h3{font-size:13.5px;margin-bottom:2px}
+.panel .ph{font-size:11.5px;color:var(--text-dim);margin-bottom:12px;line-height:1.5}
+
+.finding{border:1px solid var(--border);border-left:3px solid var(--border);border-radius:var(--radius);padding:10px 12px;margin-bottom:10px;background:var(--bg-raise)}
+.finding.high{border-left-color:var(--high)}
+.finding.med{border-left-color:var(--med)}
+.finding.info{border-left-color:var(--info)}
+.finding h4{font-size:13px;margin-bottom:3px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sev{font-size:10px;font-weight:700;letter-spacing:.6px;padding:1px 7px;border-radius:10px;text-transform:uppercase}
+.sev.high{background:var(--high-soft);color:var(--high)}
+.sev.med{background:var(--med-soft);color:var(--med)}
+.sev.info{background:var(--info-soft);color:var(--info)}
+.finding p{font-size:12.5px;color:var(--text-dim);line-height:1.5}
+.pathchip{display:inline-block;font-family:var(--mono);font-size:11px;color:var(--accent);background:var(--accent-soft);border-radius:4px;padding:1px 7px;margin:4px 4px 0 0;cursor:pointer}
+.pathchip:hover{text-decoration:underline}
+
+.att{display:flex;gap:11px;align-items:flex-start;padding:9px 0;border-bottom:1px solid #1b212b}
+.att:last-child{border-bottom:none}
+.att .dot{width:9px;height:9px;border-radius:50%;flex:none;margin-top:5px}
+.att .dot.high{background:var(--high)}
+.att .dot.med{background:var(--med)}
+.att .dot.info{background:var(--info)}
+.att .t{font-size:13px;font-weight:600}
+.att .d{font-size:12px;color:var(--text-dim);line-height:1.5;margin-top:2px}
+.att .n{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--text-faint);white-space:nowrap;padding-left:8px}
+.allClear{color:var(--info);font-size:13px;padding:10px 0}
+
+.rank{display:grid;grid-template-columns:minmax(110px,1.2fr) 2fr auto;gap:10px;align-items:center;font-size:12.5px;padding:5px 0}
+.rank .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rank .track{display:block;background:var(--bg);border-radius:4px;height:9px;overflow:hidden}
+.rank .fill{display:block;height:100%;border-radius:4px;background:var(--chart-a)}
+.rank .fill.b{background:var(--chart-b)}
+.rank .amt{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--text-dim);white-space:nowrap}
+
+/* tree */
+#treeWrap{font-family:var(--mono);font-size:12.5px;line-height:1.75}
+.tnode{white-space:nowrap}
+.trow{display:inline-flex;align-items:baseline;gap:7px;border-radius:4px;padding:0 5px}
+.trow.hit{background:var(--accent-soft);outline:1px solid var(--accent)}
+.trow.cyc{background:var(--high-soft);outline:1px solid var(--high)}
+.twist{display:inline-block;width:14px;color:var(--text-faint);cursor:pointer;user-select:none;text-align:center}
+.tcode{color:#79c0ff;cursor:pointer}
+.tcode:hover{text-decoration:underline}
+.tdesc{color:var(--text-dim)}
+.tqty{color:#f2cc60}
+.tcost{color:var(--text-faint)}
+.tkids{padding-left:20px;border-left:1px solid #21262d;margin-left:7px}
+.closed>.tkids{display:none}
+.badge{font-size:10px;padding:0 6px;border-radius:9px;background:var(--high-soft);color:var(--high);font-weight:700}
+.badge.med{background:var(--med-soft);color:var(--med)}
+
+table.data{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px}
+table.data th{position:sticky;top:0;background:var(--bg-raise);text-align:left;color:var(--text-dim);font-weight:600;padding:6px 10px;border-bottom:1px solid var(--border);white-space:nowrap;z-index:1}
+table.data td{padding:4px 10px;border-bottom:1px solid #1b212b;white-space:nowrap}
+table.data td.num{text-align:right;color:#f2cc60}
+table.data tr.bad td{background:var(--high-soft)}
+.tblwrap{overflow:auto;max-height:520px}
+
+.dz{border:2px dashed var(--border);border-radius:var(--radius);padding:16px;text-align:center;color:var(--text-dim);font-size:13px;margin-bottom:12px}
+.dz.hot{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.btnRow{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0 4px;align-items:center}
+.note{font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.5}
+#toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--bg-raise2);border:1px solid var(--accent);color:var(--text);border-radius:20px;padding:7px 18px;font-size:13px;z-index:80;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){#toast{transition:none}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">BOM <em>X-Ray</em><small>BILL OF MATERIALS WORKBENCH · 100% CLIENT-SIDE</small></div>
+  <div id="strip"></div>
+  <div class="actions">
+    <button id="btnDemo">Demo</button>
+    <button id="btnUpload">Upload BOM</button>
+    <button id="btnClear">Clear</button>
+    <a href="sage.html" style="font-size:12px">Sage X-Ray →</a>
+    <a href="migrate.html" style="font-size:12px">Migration X-Ray →</a>
+  </div>
+</header>
+
+<nav id="views" aria-label="View">
+  <button data-view="overview" class="active">Overview</button>
+  <button data-view="structure">Structure</button>
+  <button data-view="issues">Issues</button>
+  <button data-view="whereused">Where used</button>
+  <button data-view="load">Load</button>
+  <span class="viewHint">Overview is the summary. Structure is the explodable tree.</span>
+</nav>
+
+<section class="view on" id="view-overview"><div class="inner" id="overviewInner"></div></section>
+<section class="view" id="view-structure"><div class="inner"><div class="panel"><h3>Exploded structure</h3><p class="ph">Every top-level assembly, expanded through its sub-assemblies. Quantities are per one unit of the parent; the rolled-up cost is computed from component costs upward. Click a code to see where it is used.</p><div id="treeWrap"></div></div></div></section>
+<section class="view" id="view-issues"><div class="inner" id="issuesInner"></div></section>
+<section class="view" id="view-whereused"><div class="inner"><div class="panel"><h3>Where used</h3><p class="ph">Every parent that consumes the selected component, at any level. Use this before changing or discontinuing a part.</p><div class="btnRow"><input type="text" id="wuSearch" placeholder="Component code…" style="flex:1;min-width:180px;font-family:var(--mono)"></div><div id="wuOut"></div></div></div></section>
+
+<section class="view" id="view-load"><div class="inner">
+  <div class="panel">
+    <h3>Load a bill of materials</h3>
+    <p class="ph">Expects one row per BOM line — a parent assembly, the component it consumes, and the quantity. Columns are matched fuzzily, so Sage Manufacturing, ERPNext and spreadsheet layouts all work. Optional columns (cost, unit of measure, status, parent cost) unlock the costing and lifecycle checks.</p>
+    <div class="dz" id="dz">Drag &amp; drop a BOM CSV anywhere on this window — or use “Upload BOM”, or paste below</div>
+    <textarea id="paste" rows="8" spellcheck="false" placeholder="Parent,Component,Description,Qty,UoM,Unit Cost,Status&#10;FG-BIKE-01,SA-FRAME-01,Frame assembly,1,Each,84.00,Active&#10;SA-FRAME-01,RM-TUBE-AL,Aluminium tube 1m,4,Each,9.50,Active&#10;…"></textarea>
+    <div class="btnRow"><button id="btnAnalyse" class="primary">Analyse BOM</button><button id="btnDemo2">Load demo BOM</button></div>
+    <div id="err" style="color:var(--high);font-size:12.5px;margin-top:8px;display:none;font-family:var(--mono)"></div>
+    <p class="note">Privacy by design: no network requests, no storage. Parsing, cost roll-up and analysis all run in this browser tab — safe for live client data.</p>
+  </div>
+  <div class="panel">
+    <h3>Export for ERPNext</h3>
+    <p class="ph">Generates one ERPNext <b>BOM</b> import row per assembly plus its <b>BOM Item</b> lines. Column labels target the ERPNext v15 Data Import template and should be verified against the live instance before bulk import.</p>
+    <div class="btnRow"><button id="btnDlBom">⬇ bom_import.csv</button><button id="btnDlItems">⬇ bom_items_import.csv</button><button id="btnDlReport">⬇ findings report .md</button></div>
+  </div>
+</div></section>
+
+<div id="toast" role="status"></div>
+<input type="file" id="fileInput" accept=".csv,.txt" style="display:none">
+
+<script>
+(function(){
+'use strict';
+
+/* ================= PURE LAYER (parse + explode + analyse) ================= */
+
+function normKey(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
+
+function parseCSV(text){
+  text = String(text || '');
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  const rows = [];
+  let row = [], cell = '', q = false, atCellStart = true;
+  const flush = r => { if (r.some(x => String(x).trim() !== '')) rows.push(r); };
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (q){
+      if (c === '"'){ if (text[i+1] === '"'){ cell += '"'; i++; } else q = false; }
+      else cell += c;
+    }
+    else if (c === '"' && atCellStart){ q = true; atCellStart = false; }
+    else if (c === ','){ row.push(cell); cell = ''; atCellStart = true; }
+    else if (c === '\n' || c === '\r'){
+      if (c === '\r' && text[i+1] === '\n') i++;
+      row.push(cell); cell = ''; atCellStart = true; flush(row); row = [];
+    } else { cell += c; atCellStart = false; }
+  }
+  row.push(cell); flush(row);
+  return rows;
+}
+
+function parseNum(s){
+  if (s == null || String(s).trim() === '') return null;
+  let t = String(s).replace(/[£$\s]/g,'');
+  let neg = false;
+  if (/^\(.*\)$/.test(t)){ neg = true; t = t.slice(1,-1); }
+  t = t.replace(/,/g,'');
+  if (!/^-?(\d+\.?\d*|\.\d+)$/.test(t)) return null;
+  if (neg && t[0] === '-') return null;
+  const n = parseFloat(t);
+  return isNaN(n) ? null : (neg ? -n : n);
+}
+
+const BOM_ALIASES = {
+  parent:['parent','parentitem','parentcode','assembly','assemblycode','product','bom','bomcode','parentpartnumber','builditem','finishedgood'],
+  child:['component','componentcode','child','childitem','childcode','item','itemcode','part','partnumber','materialcode','subitem','stockcode'],
+  desc:['description','componentdescription','itemname','name','itemdescription','partdescription'],
+  qty:['qty','quantity','qtyper','quantityper','qtyrequired','usage','perassembly','quantityrequired'],
+  uom:['uom','unit','unitofmeasure','units','unitofsale','stockuom'],
+  cost:['unitcost','cost','standardcost','costprice','materialcost','rate','valuationrate','price'],
+  status:['status','itemstatus','lifecycle','state','active','disabled'],
+  scrap:['scrap','scrappercent','scrapfactor','wastage','waste'],
+  parentCost:['parentcost','assemblycost','standardcostparent','boMcost','bomcost','targetcost','statedcost']
+};
+
+function mapHeaders(headers, aliases){
+  const map = {}, norm = headers.map(normKey);
+  for (const f in aliases) for (const a of aliases[f]){
+    const i = norm.indexOf(a);
+    if (i !== -1){ map[f] = i; break; }
+  }
+  return map;
+}
+
+const OBSOLETE_RE = /^(obsolete|discontinued|inactive|disabled|dead|superseded|do ?not ?use|end ?of ?life|eol)$/i;
+
+function parseBOM(text){
+  text = String(text||'').trim();
+  if (!text) return {error:'Nothing to analyse — paste or drop a BOM export first.'};
+  const rows = parseCSV(text);
+  if (rows.length < 2) return {error:'Need a header row plus at least one BOM line.'};
+  const map = mapHeaders(rows[0], BOM_ALIASES);
+  if (!('parent' in map) || !('child' in map))
+    return {error:'Could not find the parent and component columns. Headers seen: ' + rows[0].join(', ') +
+      ' — need one column naming the assembly and one naming the component it consumes.'};
+  const lines = [];
+  rows.slice(1).forEach((r, i) => {
+    const g = f => f in map ? String(r[map[f]] ?? '').trim() : '';
+    const parent = g('parent'), child = g('child');
+    if (!parent && !child) return;
+    lines.push({
+      i, parent, child,
+      desc: g('desc'),
+      qtyRaw: g('qty'), qty: parseNum(g('qty')),
+      uom: g('uom'),
+      costRaw: g('cost'), cost: parseNum(g('cost')),
+      status: g('status'),
+      scrap: parseNum(g('scrap')),
+      parentCost: parseNum(g('parentCost'))
+    });
+  });
+  if (!lines.length) return {error:'No BOM lines found below the header row.'};
+  return {lines};
+}
+
+/* ---------- graph model ---------- */
+
+function buildGraph(lines){
+  const nodes = new Map();   // code → {code, desc, uom, status, cost, children:[], parents:[]}
+  const node = code => {
+    if (!nodes.has(code)) nodes.set(code, {code, desc:'', uom:'', status:'', cost:null, children:[], parents:[], uoms:new Set(), costs:new Set()});
+    return nodes.get(code);
+  };
+  for (const l of lines){
+    if (!l.parent || !l.child) continue;
+    const p = node(l.parent), c = node(l.child);
+    if (l.desc && !c.desc) c.desc = l.desc;
+    if (l.uom && !c.uom) c.uom = l.uom;
+    if (l.status && !c.status) c.status = l.status;
+    if (l.cost != null && c.cost == null) c.cost = l.cost;
+    // Track every distinct spelling so contradictions across lines can be caught —
+    // the same part costed or measured two ways is a real and dangerous defect.
+    if (l.uom) c.uoms.add(l.uom.trim().toLowerCase());
+    if (l.cost != null) c.costs.add(l.cost);
+    if (l.parentCost != null && p.cost == null) p.statedCost = l.parentCost;
+    p.children.push({code:l.child, qty:l.qty, line:l.i, scrap:l.scrap});
+    c.parents.push({code:l.parent, qty:l.qty, line:l.i});
+  }
+  const roots = [...nodes.values()].filter(n => n.parents.length === 0 && n.children.length > 0);
+  const leaves = [...nodes.values()].filter(n => n.children.length === 0);
+  return {nodes, roots, leaves};
+}
+
+// Depth-first cycle detection. Returns every distinct cycle as an ordered code list.
+function findCycles(graph){
+  const WHITE = 0, GREY = 1, BLACK = 2;
+  const colour = new Map(), stack = [], cycles = [], seen = new Set();
+  for (const code of graph.nodes.keys()) colour.set(code, WHITE);
+  const visit = code => {
+    colour.set(code, GREY); stack.push(code);
+    for (const ch of graph.nodes.get(code).children){
+      if (!graph.nodes.has(ch.code)) continue;
+      const st = colour.get(ch.code);
+      if (st === GREY){
+        const at = stack.indexOf(ch.code);
+        const cyc = stack.slice(at).concat([ch.code]);
+        const key = cyc.slice().sort().join('>');
+        if (!seen.has(key)){ seen.add(key); cycles.push(cyc); }
+      } else if (st === WHITE) visit(ch.code);
+    }
+    stack.pop(); colour.set(code, BLACK);
+  };
+  for (const code of graph.nodes.keys()) if (colour.get(code) === WHITE) visit(code);
+  return cycles;
+}
+
+// Roll costs up from leaves. Cycle members get null so a cycle can never fabricate a cost.
+function rollUpCosts(graph, cycles){
+  const inCycle = new Set();
+  for (const c of cycles) for (const code of c) inCycle.add(code);
+  const rolled = new Map(), visiting = new Set();
+  const cost = code => {
+    if (rolled.has(code)) return rolled.get(code);
+    const n = graph.nodes.get(code);
+    if (!n || inCycle.has(code) || visiting.has(code)){ rolled.set(code, null); return null; }
+    if (!n.children.length){ rolled.set(code, n.cost); return n.cost; }
+    visiting.add(code);
+    let sum = 0, complete = true;
+    for (const ch of n.children){
+      const cc = cost(ch.code);
+      const q = ch.qty;
+      if (cc == null || q == null){ complete = false; continue; }
+      const scrapMult = ch.scrap != null && ch.scrap > 0 && ch.scrap < 100 ? 1 + ch.scrap / 100 : 1;
+      sum += cc * q * scrapMult;
+    }
+    visiting.delete(code);
+    const v = complete ? Math.round(sum * 10000) / 10000 : null;
+    rolled.set(code, v);
+    return v;
+  };
+  for (const code of graph.nodes.keys()) cost(code);
+  return rolled;
+}
+
+function maxDepth(graph, cycles){
+  const inCycle = new Set();
+  for (const c of cycles) for (const code of c) inCycle.add(code);
+  const memo = new Map();
+  const d = (code, guard) => {
+    if (memo.has(code)) return memo.get(code);
+    if (inCycle.has(code) || guard.has(code)) return 0;
+    const n = graph.nodes.get(code);
+    if (!n || !n.children.length) return 0;
+    guard.add(code);
+    let m = 0;
+    for (const ch of n.children) m = Math.max(m, 1 + d(ch.code, guard));
+    guard.delete(code);
+    memo.set(code, m);
+    return m;
+  };
+  let best = 0;
+  for (const r of graph.roots) best = Math.max(best, d(r.code, new Set()));
+  return best;
+}
+
+function whereUsed(graph, code, cycles){
+  const inCycle = new Set();
+  for (const c of cycles) for (const x of c) inCycle.add(x);
+  const out = [], seen = new Set();
+  const walk = (c, path) => {
+    const n = graph.nodes.get(c);
+    if (!n) return;
+    for (const p of n.parents){
+      const key = p.code + '<' + path.join('<');
+      if (seen.has(key) || path.includes(p.code) || inCycle.has(p.code)) continue;
+      seen.add(key);
+      out.push({parent:p.code, qty:p.qty, path:[...path, p.code]});
+      walk(p.code, [...path, p.code]);
+    }
+  };
+  walk(code, [code]);
+  return out;
+}
+
+/* ---------- the quality engine ---------- */
+
+function analyseBOM(lines, graph, cycles, rolled){
+  const F = [];
+  const push = (sev, title, desc, refs) => F.push({sev, title, desc, refs: refs || []});
+
+  // 1. Circular references — a BOM that contains itself never costs and never explodes
+  if (cycles.length)
+    push('high', 'Circular BOM references',
+      'An assembly contains itself somewhere below its own level. Cost roll-up and MRP explosion cannot terminate on these, so they are excluded from all costing below. This must be broken before importing into any ERP.',
+      cycles.map(c => c.join(' → ')));
+
+  // 2. The same component described inconsistently across lines
+  const uomClash = [], costClash = [];
+  for (const [code, n] of graph.nodes){
+    if (n.uoms.size > 1) uomClash.push(code + ': ' + [...n.uoms].join(' vs '));
+    if (n.costs.size > 1) costClash.push(code + ': ' + [...n.costs].map(fmtMoney).join(' vs '));
+  }
+  if (uomClash.length)
+    push('high', 'Same component measured in different units',
+      'One part carries more than one unit of measure across its BOM lines. Whichever the import picks, the other assembly consumes the wrong amount — this is how "4 metres" silently becomes "4 each".', uomClash);
+  if (costClash.length)
+    push('med', 'Same component costed differently on different lines',
+      'One part carries more than one unit cost. The roll-up uses the first value seen, so some assembly is being costed with a figure the export itself disagrees with.', costClash);
+
+  // 3. Quantity problems
+  const badQty = [], zeroQty = [], negQty = [];
+  for (const l of lines){
+    if (!l.parent || !l.child) continue;
+    if (l.qtyRaw === '') badQty.push(l.parent + ' → ' + l.child + ' (blank)');
+    else if (l.qty == null) badQty.push(l.parent + ' → ' + l.child + ' ("' + l.qtyRaw + '")');
+    else if (l.qty === 0) zeroQty.push(l.parent + ' → ' + l.child);
+    else if (l.qty < 0) negQty.push(l.parent + ' → ' + l.child + ' (' + l.qty + ')');
+  }
+  if (badQty.length) push('high', 'Unreadable or missing quantities',
+    'A BOM line with no usable quantity cannot be costed or exploded. These lines are excluded from the cost roll-up.', badQty);
+  if (negQty.length) push('high', 'Negative quantities',
+    'A component consumed in negative quantity is almost always a keying error or a by-product modelled the wrong way.', negQty);
+  if (zeroQty.length) push('med', 'Zero quantities',
+    'Lines that consume nothing. Usually leftovers from a superseded design — they clutter the BOM and confuse pickers.', zeroQty);
+
+  // 4. Costing gaps
+  const noCost = [], zeroCost = [];
+  for (const n of graph.leaves){
+    if (n.cost == null) noCost.push(n.code);
+    else if (n.cost === 0) zeroCost.push(n.code);
+  }
+  if (noCost.length) push('high', 'Purchased parts with no cost',
+    'Bottom-level components carrying no unit cost. Every assembly above them rolls up incomplete, so the finished-goods cost is understated.', noCost);
+  if (zeroCost.length) push('med', 'Purchased parts costed at zero',
+    'A genuine zero cost is rare — usually it means the cost was never entered. Anything built from these is undercosted.', zeroCost);
+
+  // 5. Stated vs rolled-up cost
+  const drift = [];
+  for (const [code, n] of graph.nodes){
+    if (n.statedCost == null) continue;
+    const r = rolled.get(code);
+    if (r == null) continue;
+    const diff = Math.round((n.statedCost - r) * 100) / 100;
+    if (Math.abs(diff) > 0.01 && Math.abs(diff) / Math.max(1, Math.abs(r)) > 0.005)
+      drift.push(code + ': stated ' + fmtMoney(n.statedCost) + ' vs rolled-up ' + fmtMoney(r) + ' (' + (diff > 0 ? '+' : '') + fmtMoney(diff) + ')');
+  }
+  if (drift.length) push('high', 'Standard cost disagrees with the rolled-up cost',
+    'The cost held against the assembly does not match the sum of its components. Either the standard cost is stale or the BOM changed without a re-roll — margins calculated from these are wrong.', drift);
+
+  // 6. Obsolete parts on live BOMs
+  const obsolete = [];
+  for (const [code, n] of graph.nodes){
+    if (!OBSOLETE_RE.test(n.status || '')) continue;
+    if (n.parents.length) obsolete.push(code + ' (' + n.status + ') used by ' + [...new Set(n.parents.map(p => p.code))].join(', '));
+  }
+  if (obsolete.length) push('high', 'Obsolete components still on live BOMs',
+    'Parts flagged obsolete or discontinued that are still consumed by an assembly. These become unbuyable the moment existing stock runs out.', obsolete);
+
+  // 7. Duplicate component lines on one parent
+  const dupes = [];
+  for (const [code, n] of graph.nodes){
+    const seen = new Map();
+    for (const ch of n.children){
+      if (seen.has(ch.code)) dupes.push(code + ' lists ' + ch.code + ' more than once');
+      else seen.set(ch.code, 1);
+    }
+  }
+  if (dupes.length) push('med', 'Same component listed twice on one assembly',
+    'Two lines for the same part on the same parent. Usually a duplicate import — it doubles the quantity picked and the cost rolled up.', [...new Set(dupes)]);
+
+  // 8. Missing units of measure
+  const noUom = graph.leaves.filter(n => !n.uom).map(n => n.code);
+  if (noUom.length) push('med', 'Components with no unit of measure',
+    'ERPNext requires a UoM on every item. Without one the import fails or silently defaults, which is how "4 metres" becomes "4 each".', noUom);
+
+  // 9. Missing descriptions
+  const noDesc = [...graph.nodes.values()].filter(n => !n.desc).map(n => n.code);
+  if (noDesc.length) push('info', 'Components with no description',
+    'Codes with no human-readable name. Painful on a picking list and worse on a purchase order.', noDesc);
+
+  // 10. Deep nesting
+  const depth = maxDepth(graph, cycles);
+  if (depth >= 4) push('info', 'Deeply nested structure',
+    'The deepest assembly runs ' + depth + ' levels. Deep BOMs are legitimate but slow to explode and easy to get wrong — worth confirming the levels are all real.', []);
+
+  // 11. Single-child assemblies
+  const thin = [...graph.nodes.values()].filter(n => n.children.length === 1 && n.parents.length).map(n => n.code);
+  if (thin.length) push('info', 'Assemblies with a single component',
+    'A sub-assembly consuming exactly one part often adds a level for no reason. Flattening these simplifies the structure.', thin);
+
+  const order = {high:0, med:1, info:2};
+  F.sort((a,b) => order[a.sev] - order[b.sev]);
+  return F;
+}
+
+function computeBomStats(graph, cycles, rolled){
+  const assemblies = [...graph.nodes.values()].filter(n => n.children.length > 0);
+  const costed = assemblies.filter(n => rolled.get(n.code) != null);
+  const topLevel = graph.roots;
+  const totalLines = [...graph.nodes.values()].reduce((s, n) => s + n.children.length, 0);
+  return {
+    parts: graph.nodes.size,
+    assemblies: assemblies.length,
+    purchased: graph.leaves.length,
+    topLevel: topLevel.length,
+    lines: totalLines,
+    depth: maxDepth(graph, cycles),
+    cycles: cycles.length,
+    costedPct: assemblies.length ? Math.round(costed.length / assemblies.length * 100) : 0
+  };
+}
+
+function fmtMoney(n){
+  if (n == null) return '—';
+  return '£' + Math.abs(n).toLocaleString('en-GB',{minimumFractionDigits:2, maximumFractionDigits:2});
+}
+
+/* ---------- ERPNext export ---------- */
+
+function toERPNextBOM(graph, rolled){
+  const boms = [], items = [];
+  for (const [code, n] of graph.nodes){
+    if (!n.children.length) continue;
+    const r = rolled.get(code);
+    boms.push({'ID': 'BOM-' + code, 'Item': code, 'Item Name': n.desc || code, 'Quantity': 1,
+      'Is Active': 1, 'Is Default': 1, 'Currency': 'GBP', 'UOM': n.uom || 'Nos',
+      'Rolled-up Cost': r == null ? '' : r.toFixed(4)});
+    for (const ch of n.children){
+      const c = graph.nodes.get(ch.code);
+      items.push({'Parent BOM': 'BOM-' + code, 'Item Code': ch.code,
+        'Item Name': c ? (c.desc || ch.code) : ch.code,
+        'Qty': ch.qty == null ? '' : ch.qty,
+        'UOM': c ? (c.uom || 'Nos') : 'Nos',
+        'Rate': c && c.cost != null ? c.cost.toFixed(4) : ''});
+    }
+  }
+  return {boms, items};
+}
+
+function toCSV(objs){
+  if (!objs.length) return '';
+  const headers = Object.keys(objs[0]);
+  const e = v => { v = String(v ?? ''); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; };
+  return headers.map(e).join(',') + '\n' + objs.map(o => headers.map(h => e(o[h])).join(',')).join('\n') + '\n';
+}
+
+/* ---------- demo BOM (deliberately dirty — fires every detector) ---------- */
+const DEMO_BOM = `Parent,Component,Description,Qty,UoM,Unit Cost,Status,Scrap %,Parent Cost
+FG-BIKE-01,SA-FRAME-01,Frame assembly welded,1,Each,,Active,,412.50
+FG-BIKE-01,SA-WHEEL-01,Wheel assembly front,1,Each,,Active,,412.50
+FG-BIKE-01,SA-WHEEL-02,Wheel assembly rear,1,Each,,Active,,412.50
+FG-BIKE-01,RM-SADDLE,Saddle standard,1,Each,18.00,Active,,412.50
+FG-BIKE-01,RM-PAINT,Powder coat paint,0.4,Litre,22.00,Active,5,412.50
+FG-BIKE-01,RM-DECAL,Decal set,1,Set,3.50,Obsolete,,412.50
+SA-FRAME-01,RM-TUBE-AL,Aluminium tube 1m,4,Each,9.50,Active,2,
+SA-FRAME-01,RM-LUG,Frame lug,8,Each,1.75,Active,,
+SA-FRAME-01,RM-WELD-ROD,Welding rod,0.25,kg,14.00,Active,,
+SA-FRAME-01,RM-TUBE-AL,Aluminium tube 1m,4,Each,9.50,Active,,
+SA-WHEEL-01,RM-RIM-700,Rim 700c,1,Each,24.00,Active,,
+SA-WHEEL-01,RM-SPOKE,Spoke 290mm,32,Each,0.35,Active,,
+SA-WHEEL-01,RM-HUB-F,Front hub,1,Each,16.50,Active,,
+SA-WHEEL-01,RM-TYRE,Tyre 700x28,1,Pair,23.50,Active,,
+SA-WHEEL-02,RM-RIM-700,Rim 700c,1,Each,24.00,Active,,
+SA-WHEEL-02,RM-SPOKE,Spoke 290mm,32,Each,0.35,Active,,
+SA-WHEEL-02,SA-HUB-R,Rear hub assembly,1,Each,,Active,,
+SA-WHEEL-02,RM-TYRE,Tyre 700x28,1,Each,21.00,Active,,
+SA-HUB-R,RM-HUB-SHELL,Hub shell,1,Each,11.00,Active,,
+SA-HUB-R,RM-BEARING,Sealed bearing,2,Each,3.20,Active,,
+SA-HUB-R,RM-FREEHUB,Freehub body,1,Each,26.40,Active,,
+SA-HUB-R,RM-AXLE,Axle,1,Each,0.00,Active,,
+FG-BIKE-02,SA-FRAME-02,Frame assembly carbon,1,Each,,Active,,
+FG-BIKE-02,SA-WHEEL-01,Wheel assembly front,1,Each,,Active,,
+FG-BIKE-02,RM-SADDLE,Saddle standard,-1,Each,18.00,Active,,
+FG-BIKE-02,RM-GRIP,Bar grips,0,Pair,4.00,Active,,
+FG-BIKE-02,RM-CHAIN,Chain 11sp,one,Each,,Active,,
+SA-FRAME-02,RM-TUBE-CF,Carbon tube 1m,4,Each,38.00,Active,,
+SA-FRAME-02,SA-FRAME-02-SUB,Frame sub-assembly,1,Each,,Active,,
+SA-FRAME-02-SUB,SA-FRAME-02,Frame assembly carbon,1,Each,,Active,,
+FG-TRAILER-01,SA-BOX,Cargo box,1,Each,,Active,,
+SA-BOX,SA-PANEL-SET,Panel set,1,Each,,Active,,
+SA-PANEL-SET,SA-SKIN,Skin laminate,2,Each,,Active,,
+SA-SKIN,RM-PANEL,Composite panel,3,Each,7.25,Active,,
+SA-SKIN,RM-RESIN,Bonding resin,0.2,Litre,31.00,Active,,
+SA-SKIN,RM-FIXING,Panel fixing,12,,0.85,Active,,
+`;
+
+/* ================= DOM LAYER ================= */
+if (typeof document === 'undefined') return;
+
+let LINES = [], GRAPH = null, CYCLES = [], ROLLED = null, FINDINGS = [], BSTATS = null, EXPANDED = new Set();
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function toast(msg){
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._h); toast._h = setTimeout(() => t.classList.remove('show'), 1900);
+}
+function download(name, content, type){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], {type: type || 'text/csv'}));
+  a.download = name; a.click(); URL.revokeObjectURL(a.href);
+}
+
+function load(text){
+  const r = parseBOM(text);
+  const errEl = $('err');
+  if (r.error){ errEl.style.display = 'block'; errEl.textContent = r.error; return false; }
+  errEl.style.display = 'none';
+  LINES = r.lines;
+  GRAPH = buildGraph(LINES);
+  CYCLES = findCycles(GRAPH);
+  ROLLED = rollUpCosts(GRAPH, CYCLES);
+  FINDINGS = analyseBOM(LINES, GRAPH, CYCLES, ROLLED);
+  BSTATS = computeBomStats(GRAPH, CYCLES, ROLLED);
+  EXPANDED = new Set(GRAPH.roots.map(r2 => r2.code));
+  renderAll();
+  switchView('overview');
+  return true;
+}
+
+function renderAll(){ renderStrip(); renderOverview(); renderTree(); renderIssues(); renderWhereUsed(); }
+
+function renderStrip(){
+  const c = {high:0, med:0, info:0};
+  for (const f of FINDINGS) c[f.sev]++;
+  $('strip').innerHTML = BSTATS ?
+    '<span class="chip"><b>' + BSTATS.parts + '</b> parts</span>' +
+    '<span class="chip"><b>' + BSTATS.assemblies + '</b> assemblies</span>' +
+    '<span class="chip"><b>' + BSTATS.depth + '</b> levels deep</span>' +
+    (c.high ? '<span class="chip high"><b>' + c.high + '</b> blocking</span>' : '') +
+    (c.med ? '<span class="chip med"><b>' + c.med + '</b> warnings</span>' : '') +
+    (c.info ? '<span class="chip info"><b>' + c.info + '</b> info</span>' : '') : '';
+}
+
+function renderOverview(){
+  const host = $('overviewInner');
+  if (!GRAPH){ host.innerHTML = '<div class="empty">No bill of materials loaded.<br>Use <b>Demo</b> to see the engine on a sample BOM, or <b>Upload BOM</b>.</div>'; return; }
+  const s = BSTATS;
+  let h = '<div class="kpis">' +
+    kpi('Top-level products', String(s.topLevel), 'assemblies nothing else consumes', '') +
+    kpi('Sub-assemblies', String(s.assemblies - s.topLevel), 'built items below the top level', '') +
+    kpi('Purchased parts', String(s.purchased), 'bought-in, not built', '') +
+    kpi('Structure depth', String(s.depth), 'deepest level of nesting', '') +
+    kpi('Fully costed', s.costedPct + '%', 'assemblies with a complete roll-up', s.costedPct === 100 ? 'good' : s.costedPct < 60 ? 'bad' : '') +
+    (s.cycles ? kpi('Circular loops', String(s.cycles), 'must be broken before import', 'bad') : '') +
+    '</div>';
+
+  h += '<div class="grid2">';
+  h += '<div class="panel"><h3>Needs your attention</h3><p class="ph">What the checks found, most serious first. Full detail on the Issues tab.</p>' + attentionList() + '</div>';
+
+  // Most expensive top-level products
+  const costedRoots = GRAPH.roots.map(r => [r.code, ROLLED.get(r.code)]).filter(e => e[1] != null).sort((a,b) => b[1] - a[1]);
+  h += '<div class="panel"><h3>Rolled-up cost by product</h3><p class="ph">Material cost of each top-level product, computed upward from component costs. Products with an incomplete roll-up are listed underneath.</p>';
+  if (costedRoots.length){
+    const max = costedRoots[0][1] || 1;
+    h += costedRoots.map(([code, v]) =>
+      '<div class="rank"><span class="nm">' + esc(code) + '</span>' +
+      '<span class="track"><span class="fill" style="width:' + Math.max(2, Math.round(v/max*100)) + '%"></span></span>' +
+      '<span class="amt">' + esc(fmtMoney(v)) + '</span></div>').join('');
+  } else h += '<p class="ph">No product has a complete cost roll-up yet.</p>';
+  const uncosted = GRAPH.roots.filter(r => ROLLED.get(r.code) == null).map(r => r.code);
+  if (uncosted.length) h += '<p class="note">Incomplete roll-up: ' + esc(uncosted.join(', ')) +
+    ' — a component below these has no cost, or sits in a circular loop.</p>';
+  h += '</div></div>';
+
+  // Most-used components
+  const used = [...GRAPH.nodes.values()].filter(n => n.parents.length).map(n => [n.code, n.parents.length]).sort((a,b) => b[1] - a[1]).slice(0, 7);
+  h += '<div class="grid2">';
+  h += '<div class="panel"><h3>Most widely used components</h3><p class="ph">Parts consumed by the most assemblies — change one of these and the blast radius is largest.</p>';
+  if (used.length){
+    const max = used[0][1] || 1;
+    h += used.map(([code, n]) =>
+      '<div class="rank"><span class="nm"><span class="tcode" data-code="' + esc(code) + '">' + esc(code) + '</span></span>' +
+      '<span class="track"><span class="fill b" style="width:' + Math.max(2, Math.round(n/max*100)) + '%"></span></span>' +
+      '<span class="amt">' + n + ' parent' + (n > 1 ? 's' : '') + '</span></div>').join('');
+  } else h += '<p class="ph">Nothing to show.</p>';
+  h += '</div>';
+
+  h += '<div class="panel"><h3>Cost make-up of the largest product</h3><p class="ph">Where the money sits in the most expensive fully-costed product.</p>';
+  if (costedRoots.length){
+    const top = costedRoots[0][0];
+    const contrib = directContributions(top);
+    const max = contrib.length ? contrib[0][1] : 1;
+    h += '<p class="ph" style="color:var(--text)"><b>' + esc(top) + '</b> — ' + esc(fmtMoney(costedRoots[0][1])) + '</p>';
+    h += contrib.map(([code, v]) =>
+      '<div class="rank"><span class="nm">' + esc(code) + '</span>' +
+      '<span class="track"><span class="fill" style="width:' + Math.max(2, Math.round(v/max*100)) + '%"></span></span>' +
+      '<span class="amt">' + esc(fmtMoney(v)) + '</span></div>').join('');
+  } else h += '<p class="ph">No fully-costed product to break down.</p>';
+  h += '</div></div>';
+
+  host.innerHTML = h;
+  function kpi(lab, val, sub, cls){
+    return '<div class="kpi ' + cls + '"><div class="lab">' + esc(lab) + '</div><div class="val">' + esc(val) + '</div><div class="sub">' + esc(sub) + '</div></div>';
+  }
+}
+
+// Cost each direct child of an assembly contributes to it (qty x rolled cost x scrap)
+function directContributions(code){
+  const n = GRAPH.nodes.get(code);
+  if (!n) return [];
+  const out = [];
+  for (const ch of n.children){
+    const c = ROLLED.get(ch.code);
+    if (c == null || ch.qty == null) continue;
+    const mult = ch.scrap != null && ch.scrap > 0 && ch.scrap < 100 ? 1 + ch.scrap/100 : 1;
+    out.push([ch.code, Math.round(c * ch.qty * mult * 100) / 100]);
+  }
+  return out.sort((a,b) => b[1] - a[1]);
+}
+
+function attentionList(){
+  if (!FINDINGS.length) return '<div class="allClear">✓ Every check passed — this BOM is structurally sound.</div>';
+  return FINDINGS.slice(0, 6).map(f =>
+    '<div class="att"><span class="dot ' + f.sev + '"></span><div><div class="t">' + esc(f.title) + '</div>' +
+    '<div class="d">' + esc(f.desc.split('.')[0]) + '.</div></div>' +
+    (f.refs.length ? '<span class="n">' + f.refs.length + '</span>' : '') + '</div>'
+  ).join('') + (FINDINGS.length > 6 ? '<p class="note">+' + (FINDINGS.length - 6) + ' more on the Issues tab.</p>' : '');
+}
+
+function renderIssues(){
+  const host = $('issuesInner');
+  if (!GRAPH){ host.innerHTML = '<div class="empty">No BOM loaded.</div>'; return; }
+  if (!FINDINGS.length){ host.innerHTML = '<div class="panel"><div class="allClear">✓ Every check passed — nothing to fix in this BOM.</div></div>'; return; }
+  host.innerHTML = FINDINGS.map(f =>
+    '<div class="finding ' + f.sev + '"><h4><span class="sev ' + f.sev + '">' + f.sev + '</span>' + esc(f.title) + '</h4>' +
+    '<p>' + esc(f.desc) + '</p>' +
+    (f.refs.length ? '<div>' + f.refs.slice(0, 40).map(r => '<span class="pathchip">' + esc(r) + '</span>').join('') +
+      (f.refs.length > 40 ? '<span class="note"> +' + (f.refs.length - 40) + ' more</span>' : '') + '</div>' : '') +
+    '</div>').join('');
+}
+
+function renderTree(){
+  const host = $('treeWrap');
+  if (!GRAPH){ host.innerHTML = ''; return; }
+  const inCycle = new Set();
+  for (const c of CYCLES) for (const x of c) inCycle.add(x);
+  let h = '';
+  for (const r of GRAPH.roots) h += nodeHTML(r.code, 1, null, [], 0);
+  if (!GRAPH.roots.length) h = '<p class="ph">No top-level assembly found — every assembly is consumed by another, which usually means a circular reference. See the Issues tab.</p>';
+  host.innerHTML = h;
+
+  function nodeHTML(code, qty, scrap, path, depth){
+    const n = GRAPH.nodes.get(code);
+    const looped = path.includes(code);
+    const id = path.concat([code]).join('>');
+    const open = EXPANDED.has(id) || (depth === 0 && EXPANDED.has(code));
+    const kids = n && !looped ? n.children : [];
+    const rolledCost = ROLLED.get(code);
+    let s = '<div class="tnode ' + (open ? '' : 'closed') + '" data-id="' + esc(id) + '">';
+    s += '<span class="trow' + (looped || inCycle.has(code) ? ' cyc' : '') + '">';
+    s += kids.length ? '<span class="twist" data-toggle="' + esc(id) + '">' + (open ? '▾' : '▸') + '</span>' : '<span class="twist">·</span>';
+    s += '<span class="tcode" data-code="' + esc(code) + '">' + esc(code) + '</span>';
+    if (qty != null) s += '<span class="tqty">×' + esc(String(qty)) + '</span>';
+    else s += '<span class="badge med">no qty</span>';
+    if (scrap) s += '<span class="tcost">+' + esc(String(scrap)) + '% scrap</span>';
+    if (n && n.desc) s += '<span class="tdesc">' + esc(n.desc) + '</span>';
+    if (!n) s += '<span class="badge">undefined</span>';
+    else if (looped) s += '<span class="badge">circular — stopped</span>';
+    else if (OBSOLETE_RE.test(n.status || '')) s += '<span class="badge">' + esc(n.status) + '</span>';
+    if (rolledCost != null) s += '<span class="tcost">' + esc(fmtMoney(rolledCost)) + '</span>';
+    else if (n && n.children.length) s += '<span class="badge med">no roll-up</span>';
+    s += '</span>';
+    if (kids.length){
+      s += '<div class="tkids">';
+      for (const ch of kids) s += nodeHTML(ch.code, ch.qty, ch.scrap, path.concat([code]), depth + 1);
+      s += '</div>';
+    }
+    return s + '</div>';
+  }
+}
+
+function renderWhereUsed(term){
+  const host = $('wuOut');
+  if (!GRAPH){ host.innerHTML = ''; return; }
+  term = (term || '').trim().toUpperCase();
+  if (!term){ host.innerHTML = '<p class="ph">Type a component code above — or click any code in the Structure tree or the Overview.</p>'; return; }
+  const matches = [...GRAPH.nodes.keys()].filter(c => c.toUpperCase().includes(term));
+  if (!matches.length){ host.innerHTML = '<p class="ph">No component matches “' + esc(term) + '”.</p>'; return; }
+  let h = '';
+  for (const code of matches.slice(0, 5)){
+    const uses = whereUsed(GRAPH, code, CYCLES);
+    const n = GRAPH.nodes.get(code);
+    h += '<h4 style="font-size:13px;margin:14px 0 6px">' + esc(code) + (n.desc ? ' <span style="font-weight:400;color:var(--text-dim)">' + esc(n.desc) + '</span>' : '') + '</h4>';
+    if (!uses.length){ h += '<p class="ph">Not used by anything — this is a top-level item.</p>'; continue; }
+    h += '<div class="tblwrap"><table class="data"><tr><th>Used by</th><th class="num">Qty per parent</th><th>Path to top level</th></tr>' +
+      uses.map(u => '<tr><td>' + esc(u.parent) + '</td><td class="num">' + (u.qty == null ? '—' : esc(String(u.qty))) + '</td><td style="color:var(--text-dim)">' + esc(u.path.slice().reverse().join(' → ')) + '</td></tr>').join('') +
+      '</table></div>';
+  }
+  host.innerHTML = h;
+}
+
+/* events */
+function switchView(name){
+  document.querySelectorAll('#views button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('on', v.id === 'view-' + name));
+}
+$('views').addEventListener('click', e => {
+  const b = e.target.closest('button[data-view]');
+  if (b) switchView(b.dataset.view);
+});
+
+document.addEventListener('click', e => {
+  const tw = e.target.closest('[data-toggle]');
+  if (tw){
+    const id = tw.dataset.toggle;
+    if (EXPANDED.has(id)) EXPANDED.delete(id); else EXPANDED.add(id);
+    renderTree();
+    return;
+  }
+  const tc = e.target.closest('[data-code]');
+  if (tc){
+    $('wuSearch').value = tc.dataset.code;
+    renderWhereUsed(tc.dataset.code);
+    switchView('whereused');
+  }
+});
+
+let wuT;
+$('wuSearch').addEventListener('input', () => {
+  clearTimeout(wuT);
+  wuT = setTimeout(() => renderWhereUsed($('wuSearch').value), 140);
+});
+
+$('btnAnalyse').addEventListener('click', () => { if (load($('paste').value)) toast('BOM analysed'); });
+function loadDemo(){ $('paste').value = DEMO_BOM; load(DEMO_BOM); toast('Demo BOM loaded — deliberately dirty'); }
+$('btnDemo').addEventListener('click', loadDemo);
+$('btnDemo2').addEventListener('click', loadDemo);
+$('btnClear').addEventListener('click', () => {
+  LINES = []; GRAPH = null; CYCLES = []; ROLLED = null; FINDINGS = []; BSTATS = null;
+  renderAll(); $('strip').innerHTML = ''; toast('Cleared');
+});
+
+function readFile(file){
+  const rd = new FileReader();
+  rd.onload = () => { $('paste').value = rd.result; if (load(rd.result)) toast(file.name + ' analysed'); else switchView('load'); };
+  rd.readAsText(file);
+}
+$('btnUpload').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', e => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ''; });
+let dragDepth = 0;
+window.addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; $('dz').classList.add('hot'); });
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('dragleave', () => { if (--dragDepth <= 0){ dragDepth = 0; $('dz').classList.remove('hot'); } });
+window.addEventListener('drop', e => {
+  e.preventDefault(); dragDepth = 0; $('dz').classList.remove('hot');
+  if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]);
+});
+
+$('btnDlBom').addEventListener('click', () => {
+  if (!GRAPH){ toast('Load a BOM first'); return; }
+  download('bom_import.csv', toCSV(toERPNextBOM(GRAPH, ROLLED).boms));
+  toast('bom_import.csv downloaded');
+});
+$('btnDlItems').addEventListener('click', () => {
+  if (!GRAPH){ toast('Load a BOM first'); return; }
+  download('bom_items_import.csv', toCSV(toERPNextBOM(GRAPH, ROLLED).items));
+  toast('bom_items_import.csv downloaded');
+});
+$('btnDlReport').addEventListener('click', () => {
+  if (!GRAPH){ toast('Load a BOM first'); return; }
+  const s = BSTATS;
+  const L = ['# BOM X-Ray findings','',
+    'Parts: ' + s.parts + ' · assemblies: ' + s.assemblies + ' · purchased: ' + s.purchased +
+    ' · top-level products: ' + s.topLevel + ' · depth: ' + s.depth + ' · fully costed: ' + s.costedPct + '%', ''];
+  for (const f of FINDINGS){
+    L.push('## [' + f.sev.toUpperCase() + '] ' + f.title, '', f.desc, '');
+    for (const r of f.refs.slice(0, 60)) L.push('- ' + r);
+    if (f.refs.length > 60) L.push('- …and ' + (f.refs.length - 60) + ' more');
+    L.push('');
+  }
+  download('bom-findings.md', L.join('\n'), 'text/markdown');
+  toast('Report downloaded');
+});
+
+renderOverview();
+})();
+</script>
+</body>
+</html>
