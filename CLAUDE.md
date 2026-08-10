@@ -26,6 +26,7 @@ migrate.html                  ← Migration X-Ray — Sage 50 → ERPNext (same 
 bom.html                      ← BOM X-Ray — Bill of Materials Workbench (same one-file rules)
 CLAUDE.md                     ← this file
 README.md                     ← user-facing docs + Pages setup
+ERPNEXT-DEPLOYMENT.md         ← standing up the client's actual ERPNext instance (not this repo)
 .claude/skills/               ← project skills: xray-conventions, sage-migration
 .claude/agents/               ← agent defs: migration-auditor (adversarial pure-layer reviewer)
 .github/workflows/pages.yml   ← GitHub Pages deploy (publishes repo root on push to main)
@@ -583,4 +584,6 @@ data) and has never been audited.
 
 ## Deployment
 
-Static hosting only. GitHub Pages is wired up via `.github/workflows/pages.yml` (publishes the repo root on every push to `main`); one-time setup is Settings → Pages → Source: **GitHub Actions**. `vercel deploy` or an intranet share also work. No env vars, no server.
+Static hosting only, **for this repo's own apps**. GitHub Pages is wired up via `.github/workflows/pages.yml` (publishes the repo root on every push to `main`); one-time setup is Settings → Pages → Source: **GitHub Actions**. `vercel deploy` or an intranet share also work. No env vars, no server.
+
+This is a different thing from the client's ERPNext instance, which is a real server the X-Ray apps produce import files and reconciliation reports *for* — see `ERPNEXT-DEPLOYMENT.md` for standing that up. Don't conflate the two: nothing in this repo needs a server, and the ERPNext deployment isn't part of this repo's build/deploy story, it's the destination the tooling here feeds.

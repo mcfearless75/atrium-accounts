@@ -122,6 +122,17 @@ if `atrium-accounts` is refused. Live URLs are now
   **97 / 116 / 402**, 40 mutations caught across three sweeps.
 
 ## In flight / next steps
+
+- **`ERPNEXT-DEPLOYMENT.md` added** — the deployment/config runbook that was actually
+  missing. The client's wish-list (BOM, invoicing, stock taking, inventory management,
+  dashboards/historical reports) is entirely native ERPNext modules; none of it was
+  missing software, all of it was blocked on an instance existing. This document is that
+  prerequisite: server sizing, the Docker install path, backups-before-data, the import
+  order that depends on `migrate.html`'s converter output, module-by-module configuration,
+  and the VAT/MTD decision (the one section that's a real open choice, not a checklist).
+  Marked with ⚠ VERIFY wherever a claim needs checking against a live instance — nothing
+  in it has been run against a real deployment yet. **Docker is now running on the
+  server** — next is confirming DNS is pointed at it before the install script runs.
 - **Walk help.html against the client's real ERPNext instance once it exists.** The steps
   deliberately say what to *search for* rather than which menu to click, because sidebar
   wording drifts between versions — but they should still be checked against real screens

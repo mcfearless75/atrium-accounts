@@ -64,6 +64,8 @@ A roll-up is either complete or reported as incomplete — a missing component c
 
 Open `index.html` — the Atrium home dashboard — and pick a module: `sage.html` (ledgers), `bom.html` (bills of materials), `migrate.html` (Sage → ERPNext migration), `json.html` (payloads), or `help.html` (the plain-English how-do-I guide). Any modern browser. That's it.
 
+**These apps produce the files that go into ERPNext — they aren't ERPNext itself.** For standing up the actual client instance (server, install, backups, data import, module configuration, the VAT/MTD decision), see `ERPNEXT-DEPLOYMENT.md`.
+
 ## Deploy to GitHub Pages
 
 The repo ships with a Pages workflow (`.github/workflows/pages.yml`) that publishes the repo root on every push to `main`.
