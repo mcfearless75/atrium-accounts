@@ -44,7 +44,9 @@ parallel run is **not possible** in the window. Consequences and required action
 
 ## Shipped
 
-- `index.html` — JSON X-Ray (payload workbench). Merged, live.
+- `index.html` — **Atrium home dashboard**: module cards, the "getting off Sage" running
+  order, privacy footer. Every module carries an identical shared app bar. The former
+  `index.html` (JSON X-Ray, payload workbench) is now `json.html`.
 - `sage.html` — Sage X-Ray (ledger workbench): 15 detector families, Benford analysis,
   AI briefing pack, consent-gated BYO-key Ask Claude with complexity model routing.
   Merged in PR #3, live on Pages.
@@ -60,7 +62,13 @@ parallel run is **not possible** in the window. Consequences and required action
   https://claude.ai/code/artifact/095882f4-b392-48a4-9c02-87fa91124859
 
 - `bom.html` — BOM X-Ray: multi-level BOM analysis, cycle detection, cost roll-up,
-  where-used, ERPNext BOM export. **PR open, not yet merged.**
+  where-used, ERPNext BOM export. Merged in PR #5. **Then adversarially audited**, which
+  found five defects that could each put a wrong cost in front of the client with nothing
+  visibly wrong: negative costs rendered as positive, unusable scrap silently treated as
+  zero, half-populated rows dropped without a count, an export that could not reproduce the
+  displayed cost, and `"9,50"` parsing as 950. All fixed, plus nine more. 20 detector
+  families now. `tests/bom.test.mjs` (81 assertions) is the regression suite — **keep it
+  green**; it is the only committed test suite in the repo.
 
 **Repo rename is done:** `Json` → `atrium-accounts`. Note the MCP GitHub tools in a
 session scoped to the old name still work via GitHub's API redirect — pass `repo: "json"`
@@ -69,10 +77,13 @@ if `atrium-accounts` is refused. Live URLs are now
 
 ## In flight / next steps
 
-- Merge the BOM X-Ray PR.
-- Run the `migration-auditor` agent against `bom.html`'s pure layer — the ledger and
-  migration tools have both been adversarially reviewed; the BOM cost roll-up has not,
-  and wrong costings are exactly the failure this project cannot afford.
+- PR #6 open (draft): the Atrium shell plus the BOM costing fixes.
+- Write committed test suites for `sage.html` and `migrate.html` under `tests/`, in the
+  shape of `tests/bom.test.mjs`. The `migrate.html` suite from an earlier session was
+  written into a scratch directory and no longer exists — its 17 regressions cannot
+  currently be re-checked, which is the gap to close first.
+- `sage.html`'s pure layer has never been adversarially audited. The BOM audit found five
+  critical defects in code that looked fine; assume the ledger has its own.
 - ERPNext import column headers (both `migrate.html` and `bom.html`) are best-effort
   against v15 Data Import templates — **must be verified against the client's live
   instance in Phase 0** before bulk import.
