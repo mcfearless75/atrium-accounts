@@ -27,13 +27,14 @@ A single-file, zero-dependency, fully client-side JSON inspection webapp for dat
 A sister app in the same file, same rules: single-file, zero-dependency, fully client-side — built for clients running **Sage**. Paste or drop a Sage 50 audit-trail/transaction CSV (headers matched fuzzily, any column order) or Sage Business Cloud API JSON, and a ledger-specific quality engine scans it:
 
 - **Dashboard view (default)** — lands on a plain-English overview rather than a wall of transactions: income / expenditure / surplus / VAT KPI tiles, a "needs your attention" panel ranking what the checks found, a monthly money-in-vs-money-out chart, expenditure by nominal category, top customers, and downloadable profit &amp; loss and VAT summaries. Switch to **Workbench** for the transaction-level detail.
-- **15 detector families** — duplicate postings, VAT-vs-tax-code arithmetic (T0/T1/T2/T5/T9 at UK rates), unbalanced journals, sales-invoice sequence gaps, amounts skimming just below £1k/£5k/£10k/£25k approval thresholds, credits posted as negative invoices, future-dated / weekend / stale / unparseable dates, missing references and tax codes, round-sum postings, and a **Benford's-law first-digit analysis** (Nigrini MAD bands) with an inline chart.
+- **21 detector families** — amounts and dates the parser could not read (reported, never silently dropped), rows with the wrong number of columns, totals rows excluded from the figures, duplicate postings, VAT-vs-tax-code arithmetic including sign errors (T0/T1/T2/T5/T9 at UK rates, and bank/card lines are checked too), unbalanced journals, sales- and purchase-invoice sequence gaps, invoices clustering just below £1k/£5k/£10k/£25k approval thresholds, credits posted as negative invoices, future-dated / weekend / stale dates, missing references and tax codes, codes the VAT check cannot verify, round-sum postings, and a **Benford's-law first-digit analysis** with an inline chart.
 - **Findings link to rows** — click a finding to jump to and highlight the offending transactions; flagged rows are tinted by severity in the grid.
 - **Mask toggle** — hides account names and narrative across the grid, insights and every export, so screenshots and briefs are safe to share.
 - **AI briefing pack** — one click builds a Markdown brief (totals, findings, Benford table, top accounts, analyst instructions) ready to paste into any assistant the client permits. Built locally; respects the mask.
 - **Ask Claude (optional, BYO key)** — behind an explicit consent checkbox, sends *only* the briefing plus your question directly from the browser to the Anthropic API. The key lives in memory only. Everything else stays offline, same as JSON X-Ray.
 - **Complexity-aware model routing** — Auto mode weighs finding severity, ledger size and how analytical your question is, then routes it to Claude Haiku 4.5 (quick lookups), Sonnet 5 (moderate) or Opus 5 (judgement calls) — cheapest model that can do the job, with the choice and reasoning shown on every answer. Manual override available.
-- **Demo ledger** — deliberately dirty; fires all 15 detector families.
+- **Demo ledger** — deliberately dirty; fires all 21 detector families.
+- **Every total states its coverage.** If two rows carry an amount the tool will not guess at, the header says `net £… over 184 of 186 rows` rather than printing a confident figure over data it never examined. Same for undated postings, unattributed invoices and VAT sitting on transaction types with no direction.
 
 Open `sage.html` — it deploys alongside the other modules on the same Pages site.
 
@@ -53,7 +54,7 @@ Fourth app in the family, for inspecting multi-level bills of materials from Sag
 
 - **Overview** — top-level products, sub-assemblies, purchased parts, structure depth, what proportion is fully costed, and a ranked rolled-up cost per product with the cost make-up of the most expensive one.
 - **Structure** — an explodable tree: quantities per parent, scrap factors, rolled-up cost at every level, with obsolete parts and circular branches called out inline.
-- **15 checks** — circular references, one part carrying conflicting units or costs, unreadable/negative/zero quantities, purchased parts with no cost or costed at zero, standard cost drifting from the rolled-up cost, obsolete parts still on live BOMs, duplicate component lines, missing units of measure and descriptions, deep nesting and single-component assemblies.
+- **20 checks** — circular references, one part carrying conflicting units or costs, unreadable/negative/zero quantities, purchased parts with no cost or costed at zero, standard cost drifting from the rolled-up cost, obsolete parts still on live BOMs, duplicate component lines, missing units of measure and descriptions, deep nesting and single-component assemblies.
 - **Where used** — every parent that consumes a component, at any level, with the full path to the top. Check this before changing or discontinuing a part.
 - **ERPNext export** — `bom_import.csv` and `bom_items_import.csv`, plus a Markdown findings report.
 

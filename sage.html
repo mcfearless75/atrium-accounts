@@ -133,6 +133,7 @@ table.rep td.a{font-family:var(--mono);text-align:right;font-variant-numeric:tab
 table.rep tr.tot td{border-top:1px solid var(--border);border-bottom:none;font-weight:700;padding-top:8px}
 table.rep tr.tot td.a{color:var(--text)}
 .repNote{font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.5}
+.repNote.warn{color:var(--med)}
 
 /* layout */
 main{flex:1;display:flex;min-height:0}
@@ -207,7 +208,6 @@ details summary{cursor:pointer;font-size:12px;color:var(--text-dim);margin-top:8
 #aiKey,#aiQ{width:100%;margin-bottom:8px;font-family:var(--mono)}
 #aiOut{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);padding:12px;font-size:13px;line-height:1.6;display:none;white-space:pre-wrap;word-break:break-word}
 #aiOut.err{border-color:var(--high);color:var(--high)}
-#aiOut h3{margin:8px 0 4px}
 .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--accent-soft);border-top-color:var(--accent);border-radius:50%;animation:sp .8s linear infinite;vertical-align:-2px;margin-right:6px}
 @keyframes sp{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.spin{animation:none;border-top-color:var(--accent-soft)}}
@@ -349,6 +349,10 @@ details summary{cursor:pointer;font-size:12px;color:var(--text-dim);margin-top:8
 const BENFORD = [0.301,0.176,0.125,0.097,0.079,0.067,0.058,0.051,0.046];
 const VAT_RATES = {T0:0,T1:0.20,T2:0,T4:0,T5:0.05,T9:0};
 const THRESHOLDS = [1000,5000,10000,25000];
+// The rarest first digit is 9 at 4.6%, so this is the point where every expected count
+// reaches 5 and the chi-squared approximation is sound. Below it the test is not
+// merely weak, it is wrong — and a wrong fraud indicator is worse than none.
+const BENFORD_MIN_N = 120;
 
 function normKey(s){return String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'');}
 
@@ -378,45 +382,86 @@ function mapColumns(headers){
 }
 
 function parseCSV(text){
-  const rows = []; let row = [], cell = '', q = false;
+  const rows = []; let row = [], cell = '', q = false, atCellStart = true;
+  // A row is kept only if some cell has content. Excel pads a saved sheet out to its
+  // used range, so ",,,,,,,," and "   " lines are formatting, not transactions — but a
+  // quote appearing mid-cell (5" reel) is literal text, not the start of a quoted cell.
+  const flush = r => { if (r.some(c => String(c).trim() !== '')) rows.push(r); };
   for (let i = 0; i < text.length; i++){
     const c = text[i];
     if (q){
       if (c === '"'){ if (text[i+1] === '"'){ cell += '"'; i++; } else q = false; }
       else cell += c;
-    } else if (c === '"') q = true;
-    else if (c === ','){ row.push(cell); cell = ''; }
+    } else if (c === '"' && atCellStart) q = true;
+    else if (c === ','){ row.push(cell); cell = ''; atCellStart = true; }
     else if (c === '\n' || c === '\r'){
       if (c === '\r' && text[i+1] === '\n') i++;
-      row.push(cell); cell = '';
-      if (row.length > 1 || row[0] !== '') rows.push(row);
-      row = [];
-    } else cell += c;
+      row.push(cell); cell = ''; atCellStart = true;
+      flush(row); row = [];
+    } else { cell += c; atCellStart = false; }
   }
-  row.push(cell);
-  if (row.length > 1 || row[0] !== '') rows.push(row);
+  row.push(cell); flush(row);
   return rows;
 }
 
 function parseDate(s){
-  if (!s) return null;
+  if (s == null) return null;
   s = String(s).trim();
-  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);                    // ISO
+  if (!s) return null;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T ].*)?$/);          // ISO, with or without a time
   if (m) return mk(+m[1], +m[2], +m[3]);
-  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);     // UK dd/mm/yyyy
-  if (m){ let y = +m[3]; if (y < 100) y += 2000; return mk(y, +m[2], +m[1]); }
+  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})(?:[T ].*)?$/); // UK dd/mm/yyyy, with or without a time
+  if (m){
+    let y = +m[3];
+    // A 2-digit year is windowed, not blindly +2000: "01/06/98" is a 1998 posting, and
+    // reading it as 2098 raises a spurious "future-dated" critical and stretches the chart.
+    if (y < 100) y += (y > 70 ? 1900 : 2000);
+    return mk(y, +m[2], +m[1]);
+  }
   return null;
   function mk(y,mo,d){
     if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
     const dt = new Date(Date.UTC(y, mo-1, d));
-    return isNaN(dt) ? null : dt;
+    if (isNaN(dt)) return null;
+    // Date.UTC silently rolls 31/02 into March. An impossible date is a defect to
+    // report, not a value to relocate — a 31/04 typo would otherwise move a posting
+    // into a different VAT quarter without anyone seeing it.
+    if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo-1 || dt.getUTCDate() !== d) return null;
+    return dt;
   }
 }
 
+// Strict on purpose. parseFloat prefix-parses ("12abc" -> 12) and a stripped comma
+// turns a European decimal ("9,50") into 950 — both put a fabricated figure into a
+// total that then looks authoritative. Anything ambiguous returns null so the
+// unreadable-amount detector can report it rather than the row silently vanishing.
 function parseMoney(s){
-  if (s == null || s === '') return null;
-  const n = parseFloat(String(s).replace(/[£$,\s]/g,''));
-  return isNaN(n) ? null : n;
+  if (s == null) return null;
+  if (typeof s === 'number') return isFinite(s) ? s : null;
+  if (typeof s !== 'string' && typeof s !== 'boolean') return null;
+  let t = String(s).trim();
+  if (t === '') return null;
+  t = t.replace(/[£$\u00a0]/g, '').trim();
+  let neg = false;
+  // (1,250.00) — accounting bracket negative. "(-5.00)" states the sign twice and
+  // contradicts itself, so it is refused rather than guessed at.
+  if (/^\(.*\)$/.test(t)){ neg = true; t = t.slice(1, -1).trim(); }
+  // Trailing minus and CR/DR suffixes are Sage's own report and ODBC export notation.
+  const suf = t.match(/^(.*?)\s*(CR|DR)$/i);
+  if (suf){ t = suf[1].trim(); if (suf[2].toUpperCase() === 'CR') neg = !neg; }
+  if (/-$/.test(t)){ neg = !neg; t = t.slice(0, -1).trim(); }
+  t = t.replace(/\s/g, '');
+  if (t === '') return null;
+  if (t.indexOf(',') !== -1){
+    // Commas must be genuine thousands separators.
+    if (!/^-?\d{1,3}(,\d{3})+(\.\d+)?$/.test(t)) return null;
+    t = t.replace(/,/g, '');
+  }
+  if (!/^-?(\d+\.?\d*|\.\d+)$/.test(t)) return null;
+  if (neg && t[0] === '-') return null;      // sign stated twice, contradictorily
+  const n = parseFloat(t);
+  if (!isFinite(n)) return null;
+  return neg ? -n : n;
 }
 
 function normaliseTaxCode(v){
@@ -424,13 +469,32 @@ function normaliseTaxCode(v){
   const s = String(v).trim().toUpperCase();
   if (/^T\d+$/.test(s)) return s;
   // Sage Business Cloud style rate names
-  if (/^STANDARD/.test(s) || s === '20' || s === '20%') return 'T1';
-  if (/^LOWER|^REDUCED/.test(s) || s === '5' || s === '5%') return 'T5';
-  if (/^ZERO/.test(s) || s === '0' || s === '0%') return 'T0';
+  if (/^STANDARD/.test(s) || s === '20' || s === '20%' || s === '20.0' || s === '20.00') return 'T1';
+  if (/^LOWER|^REDUCED/.test(s) || s === '5' || s === '5%' || s === '5.0') return 'T5';
+  if (/^ZERO/.test(s) || s === '0' || s === '0%' || s === '0.0') return 'T0';
   if (/^EXEMPT/.test(s)) return 'T2';
   if (/^NO.?VAT|OUTSIDE/.test(s)) return 'T9';
+  // A bare number in a tax-code column is a Sage T-code without its prefix. Handling
+  // "0" and "20" but not "1" or "9" would VAT-validate some rows of a file and not
+  // others, which is worse than validating none of them.
+  if (/^\d{1,2}$/.test(s)) return 'T' + s;
   return s;
 }
+
+// Aliases for the compound keys Sage Business Cloud produces once nested objects are
+// flattened (transaction_type.id -> transactiontypeid). Without these the type and
+// nominal silently resolve to empty and the dashboard reports zeros over real rows.
+const JSON_ALIASES = {
+  type:['transactiontypeid','transactiontype','transactiontypedisplayname','typeid'],
+  account:['contactname','contactdisplayedas','contactreference','contactid'],
+  nominal:['ledgeraccountnominalcode','ledgeraccountdisplayedas','ledgeraccountid','nominalcodecode'],
+  date:['transactiondate','displayeddate'],
+  ref:['referencenumber','displayedreference'],
+  details:['detailsdescription'],
+  net:['netamountvalue','totalnetamount'],
+  tax:['taxamountvalue','totaltaxamount'],
+  tc:['taxrateid','taxratename','taxratedisplayedas']
+};
 
 // One flattened object (from CSV row or JSON record) → transaction
 function toTx(get, i){
@@ -444,7 +508,9 @@ function toTx(get, i){
     date: parseDate(get('date')),
     ref: String(get('ref')||'').trim(),
     details: String(get('details')||'').trim(),
+    netRaw: String(get('net') == null ? '' : get('net')).trim(),
     net: parseMoney(get('net')),
+    taxRaw: String(get('tax') == null ? '' : get('tax')).trim(),
     tax: parseMoney(get('tax')),
     tc: normaliseTaxCode(get('tc'))
   };
@@ -473,10 +539,24 @@ function parseInput(text){
       })(rec, '');
       const get = f => {
         for (const alias of COL_ALIASES[f]) if (alias in flat) return flat[alias];
+        for (const alias of (JSON_ALIASES[f] || [])) if (alias in flat) return flat[alias];
         return '';
       };
-      return toTx(get, i);
+      const tx = toTx(get, i);
+      tx._keys = flat;
+      return tx;
     });
+    // The CSV branch refuses to proceed without a date and an amount column. The JSON
+    // branch needs the same guard, or a payload whose keys resolve to nothing produces
+    // a full set of blank transactions and a confident all-zero dashboard.
+    const usable = txs.filter(t => t.date || t.net != null).length;
+    if (!txs.length)
+      return {error:'JSON parsed but the transaction array is empty — nothing to analyse.'};
+    if (!usable)
+      return {error:'JSON parsed and found ' + txs.length + ' record' + (txs.length === 1 ? '' : 's') +
+        ', but none carried a readable date or amount. Keys seen on the first record: ' +
+        Object.keys(txs[0]._keys || {}).slice(0, 12).join(', ') +
+        ' — the export may use field names this tool does not recognise.'};
     return {txs, format:'json'};
   }
   const rows = parseCSV(text);
@@ -484,27 +564,62 @@ function parseInput(text){
   const map = mapColumns(rows[0]);
   if (!('net' in map) || !('date' in map))
     return {error:'Could not find the essential columns. Headers seen: ' + rows[0].join(', ') + ' — need at least a date column and a net/amount column.'};
-  const txs = rows.slice(1).map((r, i) => toTx(f => f in map ? r[map[f]] : '', i));
-  return {txs, format:'csv'};
+  const width = rows[0].length;
+  const ragged = [], footers = [];
+  const body = [];
+  rows.slice(1).forEach(r => {
+    // A trailing "Total" line is a spreadsheet artefact, not a posting. Absorbed as a
+    // transaction it double-counts straight into the headline net figure.
+    const first = String(r[0] || '').trim();
+    if (/^(total|totals|grand total|sum|subtotal)$/i.test(first)){ footers.push(first); return; }
+    if (r.length !== width) ragged.push({row: body.length + 2, got: r.length});
+    body.push(r);
+  });
+  const txs = body.map((r, i) => toTx(f => f in map ? r[map[f]] : '', i));
+  return {txs, format:'csv', ragged, footers, width};
 }
 
 /* ---------- quality engine ---------- */
 
 const INVOICE_TYPES = ['SI','PI'];
 const CREDIT_TYPES = ['SC','PC'];
+// Bank and cash lines carry Net / T/C / Tax in Sage 50 just as invoices do.
+const VATABLE_TYPES = ['SI','PI','SC','PC','BP','BR','CP','CR','VP','VR'];
+
+// Chi-squared survival function for 8 degrees of freedom (9 digits, 1 constraint).
+// Closed form for even df: exp(-x/2) * Σ (x/2)^i / i!, i = 0..df/2-1.
+function chiSqP8(x){
+  if (!(x > 0)) return 1;
+  const h = x / 2;
+  return Math.exp(-h) * (1 + h + h*h/2 + h*h*h/6);
+}
 
 function benfordCalc(txs){
   const counts = new Array(9).fill(0); let n = 0;
   for (const t of txs){
+    // Journals are excluded: every JD is matched by an identical JC, so a recurring
+    // monthly journal contributes its first digit twice a month and swamps the
+    // distribution. Nigrini analyses transaction amounts, not both legs of each entry.
+    if (t.type === 'JD' || t.type === 'JC') continue;
     const a = Math.abs(t.net || 0);
     if (a < 10) continue;
     const d = +String(Math.floor(a))[0];
     if (d >= 1){ counts[d-1]++; n++; }
   }
-  if (n === 0) return {n:0, observed:new Array(9).fill(0), counts, mad:0};
+  if (n === 0) return {n:0, observed:new Array(9).fill(0), counts, mad:0, chi2:0, p:1, valid:false};
   const observed = counts.map(c => c/n);
   const mad = observed.reduce((s,o,i) => s + Math.abs(o - BENFORD[i]), 0) / 9;
-  return {n, observed, counts, mad};
+  // MAD's cutoffs (Nigrini) are large-sample constants, but MAD's own sampling spread
+  // scales as sqrt(p(1-p)/n): at n=25 perfectly Benford data sits at MAD ≈ 0.05, more
+  // than three times the "nonconformity" line, so the old n>=25 gate accused every
+  // small ledger. A chi-squared test is calibrated at any n where the expected counts
+  // support it, which is what BENFORD_MIN_N enforces.
+  let chi2 = 0;
+  for (let i = 0; i < 9; i++){
+    const e = BENFORD[i] * n;
+    chi2 += (counts[i] - e) * (counts[i] - e) / e;
+  }
+  return {n, observed, counts, mad, chi2, p: chiSqP8(chi2), valid: n >= BENFORD_MIN_N};
 }
 
 function analyse(txs){
@@ -512,58 +627,114 @@ function analyse(txs){
   const push = (sev, title, desc, rows) => F.push({sev, title, desc, rows: rows || []});
   const today = txs._today || new Date();  // injectable for tests
 
+  // 0. Data the tool could not read. Reported first, because every total below this
+  //    line is computed over a ledger these rows are missing from. There was a detector
+  //    for unreadable dates but none for unreadable amounts, so a bracket-negative
+  //    credit note simply vanished out of the headline figure with nothing said.
+  const badAmount = txs.filter(t => t.netRaw !== '' && t.net == null).map(t => t.i);
+  if (badAmount.length)
+    push('high','Amounts that could not be read',
+      'The net value on these rows is not a number this tool will guess at. They are excluded from every total, chart and check on this page — so the figures you see cover ' +
+      (txs.length - badAmount.length) + ' of ' + txs.length + ' rows. Fix them at source and re-run before trusting anything here.', badAmount);
+
+  const signConflict = txs.filter(t => (t.type === 'SC' || t.type === 'PC') && t.net != null && t.net < 0).map(t => t.i);
+  if (signConflict.length)
+    push('high','Credit notes carrying a negative amount',
+      'A credit note already reverses the direction of the posting, and a negative amount on one states that a second time. Sage 50 holds credit notes as positive figures, so this export is mixing conventions — the row could be a credit of that size or a reversal of one, and the two are opposite. These rows are excluded from the income and expenditure totals rather than counted the wrong way round.', signConflict);
+
+  const noDate = txs.filter(t => !t.dateRaw).map(t => t.i);
+  if (noDate.length)
+    push('med','Postings with no date',
+      'These rows carry an amount but no date at all. They count towards the totals yet cannot be placed in a month or a VAT period, so the reported date range does not cover them.', noDate);
+
+  const ragged = txs._ragged || [];
+  if (ragged.length)
+    push('high','Rows with the wrong number of columns',
+      ragged.length + ' row' + (ragged.length === 1 ? ' has' : 's have') + ' a different number of fields from the header, so every value after the short or extra field is read from the wrong column. ' +
+      'Usually an unquoted comma inside a description. Rows: ' + ragged.slice(0, 12).map(r => r.row + ' (' + r.got + ' fields, header has ' + (txs._width || '?') + ')').join(', ') + '.', []);
+
+  const footers = txs._footers || [];
+  if (footers.length)
+    push('info','A totals row was found and excluded',
+      'The export carries ' + footers.length + ' summary row' + (footers.length === 1 ? '' : 's') + ' (' + footers.join(', ') + '). ' +
+      'These are spreadsheet artefacts, not postings — counting them would double the headline net figure, so they have been left out.', []);
+
   // 1. Duplicate postings
   const seen = new Map();
+  const norm = v => String(v || '').trim().toLowerCase();
   for (const t of txs){
     if (t.net == null) continue;
-    const k = [t.type, t.account, t.dateRaw, t.ref, t.net.toFixed(2)].join('|');
+    // Nominal and details belong in the key: one invoice split across two nominals
+    // shares its type, account, date, ref and amount, and is not a duplicate. Matching
+    // on the parsed date rather than the raw string catches the same posting exported
+    // twice in two date formats — which is exactly what a migration produces.
+    const k = [norm(t.type), norm(t.account), t.date ? t.date.getTime() : norm(t.dateRaw),
+               norm(t.ref), norm(t.nominal), norm(t.details), t.net.toFixed(2)].join('|');
     (seen.get(k) || seen.set(k, []).get(k)).push(t.i);
   }
   const dupRows = [];
   for (const [,ids] of seen) if (ids.length > 1) dupRows.push(...ids);
   if (dupRows.length)
     push('high','Possible duplicate postings',
-      'Transactions sharing the same type, account, date, reference and amount. Classic double-keyed invoice or a re-posted import batch.', dupRows);
+      'Transactions identical in every field — type, account, nominal, date, reference, details and amount. Classic double-keyed invoice or a re-posted import batch.', dupRows);
 
   // 2. VAT arithmetic
-  const vatRows = [];
+  const vatRows = [], vatSignRows = [];
   for (const t of txs){
     if (t.net == null || t.tax == null || !t.tc || !(t.tc in VAT_RATES)) continue;
-    if (!INVOICE_TYPES.includes(t.type) && !CREDIT_TYPES.includes(t.type)) continue;
+    // Sage's Bank Payment / Receipt screen carries Net, T/C and Tax columns, so card
+    // spend and direct debits routinely hold VAT. Exempting them from the check left
+    // the most common posting in a Sage estate unverified.
+    if (!VATABLE_TYPES.includes(t.type)) continue;
     const expect = Math.abs(t.net) * VAT_RATES[t.tc];
-    if (Math.abs(Math.abs(t.tax) - expect) > 0.02) vatRows.push(t.i);
+    if (Math.abs(Math.abs(t.tax) - expect) > 0.02){ vatRows.push(t.i); continue; }
+    // The magnitude can be right while the sign is wrong. Comparing absolute values on
+    // both sides throws away the only evidence of it — and a VAT amount whose sign
+    // disagrees with its net is a £2x error on the return.
+    if (t.tax !== 0 && t.net !== 0 && Math.sign(t.tax) !== Math.sign(t.net)) vatSignRows.push(t.i);
   }
   if (vatRows.length)
     push('high','VAT does not match the tax code',
       'Tax amount disagrees with the UK rate implied by the tax code (T1 = 20%, T5 = 5%, T0/T2/T9 = nil), beyond a 2p rounding tolerance. Wrong code or manually overridden VAT.', vatRows);
+  if (vatSignRows.length)
+    push('high','VAT sign disagrees with the net amount',
+      'The tax is the right size but points the opposite way to the net on the same line. Each of these misstates the VAT return by twice the tax figure.', vatSignRows);
 
   // 3. Unbalanced journals
   const jr = new Map();
   for (const t of txs){
     if (t.type !== 'JD' && t.type !== 'JC') continue;
-    const k = t.ref || '(no ref)';
-    const e = jr.get(k) || {sum:0, rows:[]};
+    // Keyed on reference AND date. Sage users reuse one reference for a recurring
+    // monthly journal, and grouping on the reference alone merges every month into one
+    // bucket — where two broken journals can cancel each other out and neither is
+    // reported. Journals with no reference at all otherwise land in a single pot.
+    const k = (t.ref || '(no ref)') + '\u0000' + (t.dateRaw || '(no date)');
+    const e = jr.get(k) || {sum:0, rows:[], ref:t.ref || '(no ref)', when:t.dateRaw};
     e.sum += (t.type === 'JD' ? 1 : -1) * (t.net || 0);
     e.rows.push(t.i);
     jr.set(k, e);
   }
-  for (const [ref, e] of jr){
+  for (const [, e] of jr){
     if (Math.abs(e.sum) > 0.005)
-      push('high', 'Unbalanced journal ' + ref,
-        'Journal debits and credits differ by ' + fmtGBP(Math.abs(e.sum)) + '. A journal must net to zero — this one will throw the trial balance.', e.rows);
+      push('high', 'Unbalanced journal ' + e.ref + (e.when ? ' (' + e.when + ')' : ''),
+        'Journal debits and credits differ by ' + fmtMag(e.sum) + '. A journal must net to zero — this one will throw the trial balance.', e.rows);
   }
 
   // 4. Invoice sequence gaps
   const seqs = new Map();
   for (const t of txs){
-    if (t.type !== 'SI') continue;
-    const m = t.ref.match(/^([A-Za-z-]*?)(\d{3,})$/);
+    if (t.type !== 'SI' && t.type !== 'PI') continue;
+    // The prefix may itself contain digits and separators — INV-2026-0001 is an
+    // ordinary UK invoice reference, and a prefix class of [A-Za-z-] rejected it.
+    const m = t.ref.match(/^(.*?)(\d{3,})$/);
     if (!m) continue;
-    const e = seqs.get(m[1]) || [];
+    const e = seqs.get(t.type + '\u0000' + m[1]) || [];
     e.push({n:+m[2], i:t.i});
-    seqs.set(m[1], e);
+    seqs.set(t.type + '\u0000' + m[1], e);
   }
-  for (const [prefix, list] of seqs){
+  for (const [key, list] of seqs){
+    const prefix = key.split('\u0000')[1];
+    const kind = key.slice(0,2) === 'SI' ? 'sales' : 'purchase';
     if (list.length < 3) continue;
     list.sort((a,b) => a.n - b.n);
     const missing = [];
@@ -573,22 +744,31 @@ function analyse(txs){
       for (let g = list[k-1].n + 1; g < list[k].n && missing.length < 20; g++) missing.push(prefix + g);
     }
     if (missing.length)
-      push('med','Gaps in sales invoice sequence' + (prefix ? ' “' + prefix + '”' : ''),
+      push('med','Gaps in ' + kind + ' invoice sequence' + (prefix ? ' “' + prefix + '”' : ''),
         'Missing reference numbers: ' + missing.join(', ') + '. Deleted, held or unposted invoices break the audit trail.',
         list.map(x => x.i));
   }
 
   // 5. Threshold skimming
+  // Roughly 3.6% of any natural ledger falls in the 5% band under a threshold purely by
+  // arithmetic, so "one invoice landed there" is evidence of nothing. Comparing the band
+  // below each threshold against the mirror band immediately above it is self-calibrating:
+  // a real skimming pattern is lopsided, ordinary trading is not.
   const skimRows = [];
+  let below = 0, above = 0;
   for (const t of txs){
     if (t.net == null || !INVOICE_TYPES.includes(t.type)) continue;
     const a = Math.abs(t.net);
-    for (const th of THRESHOLDS)
-      if (a >= th * 0.95 && a < th){ skimRows.push(t.i); break; }
+    for (const th of THRESHOLDS){
+      if (a >= th * 0.95 && a < th){ below++; skimRows.push(t.i); break; }
+      if (a >= th && a < th * 1.05){ above++; break; }
+    }
   }
-  if (skimRows.length)
-    push('med','Amounts just below common approval thresholds',
-      'Invoices within 5% under £' + THRESHOLDS.map(t=>t.toLocaleString('en-GB')).join(' / £') + '. A cluster here is the classic signature of authority-limit skimming or split invoicing.', skimRows);
+  if (below >= 4 && below >= above * 2 + 2)
+    push('med','Invoices cluster just under approval thresholds',
+      below + ' invoices sit within 5% under £' + THRESHOLDS.map(t=>t.toLocaleString('en-GB')).join(' / £') +
+      ', against ' + above + ' in the matching band just above. That asymmetry is worth sampling — ' +
+      'authority-limit skimming and split invoicing both leave it. An even split across the two bands would be ordinary trading.', skimRows);
 
   // 6. Negative invoices
   const negRows = txs.filter(t => INVOICE_TYPES.includes(t.type) && t.net != null && t.net < 0).map(t => t.i);
@@ -616,8 +796,12 @@ function analyse(txs){
   if (noRef.length) push('info','Invoices without a reference','Blank references make matching against supplier statements and remittances painful.', noRef);
   const noTc = txs.filter(t => (INVOICE_TYPES.includes(t.type) || CREDIT_TYPES.includes(t.type)) && !t.tc).map(t => t.i);
   if (noTc.length) push('info','Missing tax codes','Invoice/credit lines with no tax code — they will fall out of the VAT return silently.', noTc);
-  const unknownTc = txs.filter(t => t.tc && /^T\d+$/.test(t.tc) && !(t.tc in VAT_RATES)).map(t => t.i);
-  if (unknownTc.length) push('info','Non-standard tax codes','Tax codes outside the common Sage set (T0/T1/T2/T4/T5/T9). Check the company’s tax code configuration.', unknownTc);
+  // Any code not in VAT_RATES escapes the VAT arithmetic check. Requiring it to look
+  // like T<digits> before reporting it meant "RC", "EC Goods" or an unrecognised
+  // Business Cloud rate name fell through all three tax-code detectors in silence.
+  const unknownTc = txs.filter(t => t.tc && !(t.tc in VAT_RATES)).map(t => t.i);
+  if (unknownTc.length) push('med','Tax codes the VAT check cannot verify',
+    'Codes outside the common Sage set (T0/T1/T2/T4/T5/T9). The VAT arithmetic check has no rate for these, so the tax on those lines is going out unverified — confirm them against the company’s tax code configuration.', unknownTc);
 
   // 9. Round-sum postings
   const roundRows = txs.filter(t => t.net != null && Math.abs(t.net) >= 500 && Math.abs(t.net) % 100 === 0 && (INVOICE_TYPES.includes(t.type) || t.type === 'JD' || t.type === 'JC')).map(t => t.i);
@@ -626,13 +810,15 @@ function analyse(txs){
 
   // 10. Benford
   const ben = benfordCalc(txs);
-  if (ben.n >= 25){
-    if (ben.mad > 0.015)
+  if (ben.valid){
+    if (ben.p < 0.01)
       push('med','First digits deviate from Benford’s law',
-        'Mean absolute deviation ' + (ben.mad*100).toFixed(2) + '% across ' + ben.n + ' amounts — above the 1.5% nonconformity line (Nigrini). Not proof of anything, but the distribution is unusual enough to sample.', []);
-    else if (ben.mad > 0.012)
+        'Across ' + ben.n + ' amounts the first-digit distribution differs from the expected one by more than chance would produce in 1 run in 100 (χ² ' + ben.chi2.toFixed(1) +
+        ', mean absolute deviation ' + (ben.mad*100).toFixed(2) + '%). Not proof of anything — round-number pricing and tight product ranges both do this — but it is worth sampling.', []);
+    else if (ben.p < 0.05)
       push('info','First-digit distribution is marginal',
-        'Mean absolute deviation ' + (ben.mad*100).toFixed(2) + '% across ' + ben.n + ' amounts — marginally above the acceptable-conformity band. See the Insights tab.', []);
+        'Across ' + ben.n + ' amounts the first-digit distribution is unusual at the 1-in-20 level (χ² ' + ben.chi2.toFixed(1) +
+        ', mean absolute deviation ' + (ben.mad*100).toFixed(2) + '%). Weak on its own. See the Insights tab.', []);
   }
 
   const order = {high:0, med:1, info:2};
@@ -649,7 +835,13 @@ function computeStats(txs){
     if (t.date){ if (!min || t.date < min) min = t.date; if (!max || t.date > max) max = t.date; }
   }
   const top = [...accounts.entries()].sort((a,b) => b[1] - a[1]).slice(0, 8);
-  return {count:txs.length, net, tax, min, max, top};
+  // Coverage travels with the totals. A net figure over 2 of 4 rows is not the same
+  // number as a net figure over 4 of 4, and the surface showing it has to be able to
+  // say which it is.
+  const netRows = txs.filter(t => t.net != null).length;
+  const datedRows = txs.filter(t => t.date).length;
+  return {count:txs.length, net, tax, min, max, top,
+          netRows, datedRows, missingNet: txs.length - netRows, missingDate: txs.length - datedRows};
 }
 
 /* ---------- AI model routing ----------
@@ -704,7 +896,12 @@ const NOMINAL_BANDS = [
 ];
 
 function classifyNominal(code){
-  const n = parseInt(code, 10);
+  // parseInt happily reads "4,000" as 4 and "4000A" as 4000, which files a sales
+  // nominal under fixed assets. parseMoney already refuses that shape; these two must
+  // not disagree about the same cell.
+  const raw = String(code == null ? '' : code).trim();
+  if (!/^\d{1,5}$/.test(raw)) return null;
+  const n = parseInt(raw, 10);
   if (isNaN(n)) return null;
   for (const [lo, hi, kind, label] of NOMINAL_BANDS)
     if (n >= lo && n <= hi) return {kind, label};
@@ -714,6 +911,10 @@ function classifyNominal(code){
 const SALES_TYPES = {SI:1, SC:-1};
 const PURCHASE_TYPES = {PI:1, PC:-1};
 const JOURNAL_DIR = {JD:1, JC:-1};   // debit positive, credit negative
+// Bank, cash and card movements. Payments send money out, receipts bring it back —
+// treating both as positive made a rent refund add to rent rather than reduce it.
+const BANK_DIR = {BP:1, CP:1, VP:1, BR:-1, CR:-1, VR:-1};
+const CREDIT_TYPES_SET = {SC:1, PC:1};
 
 // Direction-aware classification of one transaction into income / expense / other.
 // Journals need double-entry signs: income accounts carry credit balances, so a
@@ -722,6 +923,13 @@ const JOURNAL_DIR = {JD:1, JC:-1};   // debit positive, credit negative
 function classifyTx(t){
   const c = classifyNominal(t.nominal);
   const amt = t.net == null ? 0 : t.net;
+  // A credit type already means "the other way"; a negative amount on one states the
+  // direction a second time. Sage 50's audit trail holds unsigned magnitudes, so an
+  // export that signs them too is mixing conventions and the intended direction is
+  // genuinely unknown — a reversed credit and a signed credit look identical. Neither
+  // reading is safe to assume, so the row is excluded and reported rather than guessed.
+  if ((t.type in CREDIT_TYPES_SET) && amt < 0)
+    return {kind:'signconflict', value: 0, label: c ? c.label : 'Credits'};
   if (t.type in SALES_TYPES)     return {kind:'income',  value: amt * SALES_TYPES[t.type],    label: c ? c.label : 'Sales'};
   if (t.type in PURCHASE_TYPES)  return {kind:'expense', value: amt * PURCHASE_TYPES[t.type], label: c ? c.label : 'Purchases'};
   if (!c) return {kind:'other', value: amt, label:'Other'};
@@ -729,6 +937,14 @@ function classifyTx(t){
     const dir = JOURNAL_DIR[t.type];
     if (c.kind === 'income')  return {kind:'income',  value: -amt * dir, label: c.label};
     if (c.kind === 'expense') return {kind:'expense', value:  amt * dir, label: c.label};
+    return {kind: c.kind, value: amt, label: c.label};
+  }
+  // A bank payment against an expense nominal is spend; a bank receipt against the same
+  // nominal is a refund of that spend, and must come back off it.
+  if (t.type in BANK_DIR){
+    const dir = BANK_DIR[t.type];
+    if (c.kind === 'expense') return {kind:'expense', value: amt * dir, label: c.label};
+    if (c.kind === 'income')  return {kind:'income',  value: -amt * dir, label: c.label};
     return {kind: c.kind, value: amt, label: c.label};
   }
   return {kind: c.kind, value: amt, label: c.label};
@@ -745,6 +961,7 @@ function monthLabel(k){
 function buildDashboard(txs){
   let income = 0, expense = 0, outputTax = 0, inputTax = 0, unclassified = 0;
   let undatedIncome = 0, undatedExpense = 0, undated = 0;
+  let vatUncounted = 0, unattributedIncome = 0, unattributedExpense = 0, unreadable = 0, signConflict = 0;
   const months = new Map();          // 'YYYY-MM' → {income, expense}
   const expenseCats = new Map();     // label → total
   const customers = new Map();       // account → income
@@ -752,6 +969,7 @@ function buildDashboard(txs){
   const plIncome = new Map(), plExpense = new Map();   // label → total
 
   for (const t of txs){
+    if (t.netRaw !== '' && t.net == null) unreadable++;
     const c = classifyTx(t);
     const mk = monthKey(t.date);
     if (mk && !months.has(mk)) months.set(mk, {income:0, expense:0});
@@ -765,24 +983,48 @@ function buildDashboard(txs){
       if (mk) months.get(mk).income += c.value;
       // Only genuine sales documents name a customer — bank receipts and journals
       // carry a nominal or control account, not a trading relationship.
-      if (t.account && (t.type in SALES_TYPES)) customers.set(t.account, (customers.get(t.account) || 0) + c.value);
+      if (t.type in SALES_TYPES){
+        if (t.account) customers.set(t.account, (customers.get(t.account) || 0) + c.value);
+        else unattributedIncome += c.value;
+      }
     } else if (c.kind === 'expense'){
       expense += c.value;
       plExpense.set(c.label, (plExpense.get(c.label) || 0) + c.value);
       expenseCats.set(c.label, (expenseCats.get(c.label) || 0) + c.value);
       if (mk) months.get(mk).expense += c.value;
-      if (t.account && (t.type in PURCHASE_TYPES)) suppliers.set(t.account, (suppliers.get(t.account) || 0) + c.value);
+      if (t.type in PURCHASE_TYPES){
+        if (t.account) suppliers.set(t.account, (suppliers.get(t.account) || 0) + c.value);
+        else unattributedExpense += c.value;
+      }
+    } else if (c.kind === 'signconflict'){
+      signConflict++;
     } else if (c.kind === 'other' || c.kind === 'suspense'){
-      if (t.net != null && t.type !== 'JD' && t.type !== 'JC') unclassified++;
+      // Previously journals were exempt from this counter, so a journal whose nominal
+      // was blank or unreadable left both the totals and the disclosure untouched.
+      if (t.net != null) unclassified++;
     }
-    // VAT: tax on sales is output tax (owed to HMRC), tax on purchases is input tax (reclaimable)
+    // VAT: tax on sales is output tax (owed to HMRC), tax on purchases is input tax
+    // (reclaimable). Bank and card lines carry VAT too — direct debits and card spend
+    // are among the most common postings in a Sage estate, and counting only the
+    // invoice types overstated the amount owed by the whole of the input tax on them.
     if (t.tax != null && t.tax !== 0){
       if (t.type in SALES_TYPES) outputTax += t.tax * SALES_TYPES[t.type];
       else if (t.type in PURCHASE_TYPES) inputTax += t.tax * PURCHASE_TYPES[t.type];
+      else if (t.type in BANK_DIR){
+        const dir = BANK_DIR[t.type];
+        if (c.kind === 'income') outputTax += t.tax * -dir;
+        else inputTax += t.tax * dir;
+      }
+      else vatUncounted += Math.abs(t.tax);
     }
   }
 
+  // Two different jobs. A "top N" list may reasonably show only positive entries, but a
+  // P&L breakdown must contain every line its own total contains — filtering out a
+  // net-negative category (a supplier rebate, a credit-heavy month) leaves a table that
+  // does not add up to the total printed underneath it, and exports that way too.
   const rank = m => [...m.entries()].filter(e => e[1] > 0).sort((a,b) => b[1] - a[1]);
+  const breakdown = m => [...m.entries()].filter(e => e[1] !== 0).sort((a,b) => Math.abs(b[1]) - Math.abs(a[1]));
   const monthly = [...months.entries()].sort((a,b) => a[0] < b[0] ? -1 : 1)
     .map(([k, v]) => ({key:k, label:monthLabel(k), income:v.income, expense:v.expense}));
 
@@ -790,19 +1032,28 @@ function buildDashboard(txs){
     income, expense, net: income - expense,
     outputTax, inputTax, vatDue: outputTax - inputTax,
     monthly,
-    expenseCats: rank(expenseCats),
+    expenseCats: breakdown(expenseCats),
     topCustomers: rank(customers).slice(0, 6),
     topSuppliers: rank(suppliers).slice(0, 6),
-    pl: {income: rank(plIncome), expense: rank(plExpense)},
-    unclassified,
+    unattributedIncome, unattributedExpense,
+    pl: {income: breakdown(plIncome), expense: breakdown(plExpense)},
+    unclassified, vatUncounted, unreadable, signConflict,
     undated, undatedIncome, undatedExpense
   };
 }
 
+// Signed on purpose. A negative income, expenditure or VAT figure is information —
+// rendering -£2,000 of supplier credit as "Expenditure £2,000.00" turns money coming
+// back into money going out, on the screen a non-specialist reads at face value.
 function fmtGBP(n){
-  return '£' + Math.abs(n).toLocaleString('en-GB',{minimumFractionDigits:2, maximumFractionDigits:2});
+  if (n == null || !isFinite(n)) return '—';
+  const s = Math.abs(n).toLocaleString('en-GB',{minimumFractionDigits:2, maximumFractionDigits:2});
+  return (n < 0 ? '-£' : '£') + s;
 }
-function fmtSigned(n){ return (n < 0 ? '-' : '') + fmtGBP(n); }
+// Kept as an alias so existing call sites reading "signed" stay obvious at a glance.
+function fmtSigned(n){ return fmtGBP(n); }
+// For the rare place a magnitude genuinely is what is wanted (bar widths, "differ by").
+function fmtMag(n){ return '£' + Math.abs(n == null ? 0 : n).toLocaleString('en-GB',{minimumFractionDigits:2, maximumFractionDigits:2}); }
 function fmtDate(d){ return d ? d.toISOString().slice(0,10) : ''; }
 
 /* ---------- demo ledger (deliberately dirty — must fire every detector) ---------- */
@@ -852,7 +1103,38 @@ SI,BLUE02,4000,30/06/2026,INV1022,Month-end true-up,990.00,198.00,T1
 PI,SUPP02,5000,30/06/2026,PB-4516,Compute burst charges,945.00,189.00,T1
 SI,CRED03,4001,30/06/2026,INV1023,Affordability re-run,955.00,191.00,T1
 BP,BANK01,7901,31/13/2026,DD-9999,Software subscription,29.00,5.80,T1
+SI,ACME01,4000,12/06/2026,INV1024,Rebilled expenses,n/a,0.00,T1
+SI,BLUE02,4000,,INV1025,Undated true-up,410.00,82.00,T1
+SI,CRED03,4000,13/06/2026,INV1026,Sign error on VAT,500.00,-100.00,T1
+PI,SUPP03,5000,14/06/2026,PB-4520,Reverse charge services,800.00,0.00,RC
+SI,ACME01,4000,15/06/2026,INV1027,Discovery workshop,985.00,197.00,T1
+SI,BLUE02,4000,16/06/2026,INV1028,Data quality review,962.00,192.40,T1
+PI,SUPP04,7100,17/06/2026,PB-4521,Office fit-out phase 1,4880.00,976.00,T1
+PI,SUPP04,7100,18/06/2026,PB-4522,Office fit-out phase 2,24500.00,4900.00,T1
+SI,ACME01,4000,19/06/2026,INV1029,Model monitoring, quarterly,1200.00,240.00,T1
+Total,,,,,,45000.00,9000.00,
 `;
+
+// A deterministic block of routine card payments, appended to the hand-written ledger
+// above so the demo is large enough for the Benford test to be valid — it needs at least
+// BENFORD_MIN_N amounts, and a first-digit test on 45 transactions is not a weak test but
+// an invalid one. The first digits are deliberately skewed towards 4 and 5, so the demo
+// exercises the detector on a real signal rather than on small-sample noise.
+function demoBulk(){
+  const out = [];
+  for (let k = 0; k < 132; k++){
+    const day = 1 + (k % 28);
+    const date = String(day).padStart(2, '0') + '/' + (k < 66 ? '05' : '06') + '/2026';
+    const lead = [4,5,4,5,4,5,4,5,1,2,3,6][k % 12];
+    const net = lead * 10 + ((k * 13) % 10) + ((k * 37) % 100) / 100;
+    const tax = Math.round(net * 20) / 100;
+    out.push('BP,BANK01,7900,' + date + ',CARD-' + (4000 + k) + ',Card payment ' + (k + 1) +
+             ',' + net.toFixed(2) + ',' + tax.toFixed(2) + ',T1');
+  }
+  return out.join('\n') + '\n';
+}
+
+const DEMO_LEDGER = DEMO_CSV + demoBulk();
 /* Demo date pinning: 2026-07-15 so future/stale/weekend checks are deterministic.
    04/06/2026 is a Thursday; 21/06/2026 (Sun), 07/06/2026 (Sun), 14/06/2026 (Sun),
    28/06/2026 (Sun) give weekend hits; 15/01/2027 is future; 10/05/2023 is stale. */
@@ -883,11 +1165,27 @@ function load(text, today){
   errEl.style.display = 'none';
   TXS = r.txs;
   if (today) TXS._today = today;
+  // Structural problems found during parsing travel with the rows so the quality engine
+  // can report them alongside everything else.
+  TXS._ragged = r.ragged || [];
+  TXS._footers = r.footers || [];
+  TXS._width = r.width;
   const a = analyse(TXS);
   FINDINGS = a.findings; BENFORD_R = a.benford; STATS = computeStats(TXS);
   ROW_SEV = {};
   for (const f of FINDINGS) for (const i of f.rows)
     if (!(i in ROW_SEV) || f.sev === 'high') ROW_SEV[i] = f.sev;
+  // A briefing belongs to the ledger it was built from. Left in place across a load it
+  // would be the PREVIOUS client's figures that Ask Claude transmits, while the answer
+  // is attributed to this one. Consent is withdrawn for the same reason: it was given
+  // for that data, not this.
+  $('brief').value = '';
+  $('aiOut').style.display = 'none';
+  $('aiMeta').style.display = 'none';
+  if ($('aiConsent').checked){
+    $('aiConsent').checked = false;
+    $('btnAsk').disabled = true;
+  }
   renderAll();
   $('overlay').classList.add('hidden');
   switchView('dashboard');   // land on the overview, not the transaction grid
@@ -950,7 +1248,10 @@ function renderDashboard(){
     '<div class="btnRow" style="margin-top:10px"><button data-rep="pl">Download P&amp;L .csv</button></div></div>';
   h += '<div class="panel"><h3>VAT summary</h3><p class="ph">Tax recorded against sales and purchase transactions in this period.</p>' + vatTable(D) +
     '<div class="btnRow" style="margin-top:10px"><button data-rep="vat">Download VAT .csv</button></div>' +
-    '<p class="repNote">Indicative only — computed from this export, not a submitted return. It does not replace the VAT return produced by your accounting system.</p></div>';
+    '<p class="repNote">Indicative only — computed from this export, not a submitted return. It does not replace the VAT return produced by your accounting system. ' +
+    'Covers sales, purchase, bank, cash and card lines.' +
+    (D.vatUncounted ? ' <span class="warn">' + esc(fmtMag(D.vatUncounted)) + ' of tax sits on transaction types with no direction (journals and unrecognised types) and is NOT in the figures above.</span>' : '') +
+    '</p></div>';
   h += '</div>';
 
   host.innerHTML = h;
@@ -988,12 +1289,24 @@ function plTable(D){
   for (const [lab, v] of D.pl.income) h += '<tr><td>' + esc(lab) + '</td><td class="a">' + esc(fmtGBP(v)) + '</td></tr>';
   if (!D.pl.income.length) h += '<tr><td colspan="2" style="color:var(--text-faint)">None</td></tr>';
   h += '<tr><td colspan="2" style="color:var(--text-dim);font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding-top:12px">Expenditure</td></tr>';
-  for (const [lab, v] of D.pl.expense) h += '<tr><td>' + esc(lab) + '</td><td class="a">(' + esc(fmtGBP(v)) + ')</td></tr>';
+  // Accounting brackets already mean "negative", so "(-£3,000.00)" reads as a double
+  // negative. A category that nets to a credit is labelled as one instead.
+  for (const [lab, v] of D.pl.expense) h += '<tr><td>' + esc(lab) + '</td><td class="a">' +
+    (v >= 0 ? '(' + esc(fmtMag(v)) + ')' : esc(fmtMag(v)) + ' <span style="color:var(--info)">credit</span>') + '</td></tr>';
   if (!D.pl.expense.length) h += '<tr><td colspan="2" style="color:var(--text-faint)">None</td></tr>';
   h += '<tr class="tot"><td>' + (D.net >= 0 ? 'Surplus' : 'Deficit') + '</td><td class="a" style="color:' +
     (D.net >= 0 ? 'var(--info)' : 'var(--high)') + '">' + esc(fmtSigned(D.net)) + '</td></tr></table>';
   if (D.unclassified) h += '<p class="repNote">' + D.unclassified + ' transaction' + (D.unclassified > 1 ? 's' : '') +
     ' could not be classified as income or expenditure (bank, journal or unrecognised nominal) and sit outside this summary.</p>';
+  // Every exclusion is named. A summary that quietly leaves rows out is the failure this
+  // whole tool exists to catch, so it must not commit it itself.
+  if (D.unreadable) h += '<p class="repNote warn">' + D.unreadable + ' row' + (D.unreadable > 1 ? 's' : '') +
+    ' had an amount this tool would not guess at, and are excluded from every figure above. See the findings.</p>';
+  if (D.signConflict) h += '<p class="repNote warn">' + D.signConflict + ' credit note' + (D.signConflict > 1 ? 's' : '') +
+    ' carried a negative amount, which states the direction twice. Excluded rather than counted the wrong way round.</p>';
+  if (D.unattributedIncome || D.unattributedExpense) h += '<p class="repNote">' +
+    esc(fmtSigned(D.unattributedIncome + D.unattributedExpense)) +
+    ' of invoice activity carries no account name, so it is inside these totals but absent from the customer and supplier rankings.</p>';
   return h;
 }
 
@@ -1053,10 +1366,19 @@ function renderStrip(){
   const c = {high:0, med:0, info:0};
   for (const f of FINDINGS) c[f.sev]++;
   const period = STATS.min ? fmtDate(STATS.min) + ' → ' + fmtDate(STATS.max) : 'no dates';
+  // A total is only as good as its coverage. Printing "net £253,285.92" over a ledger
+  // where two rows could not be read states a figure the tool did not actually examine
+  // in full, so the chip says which rows it covers whenever that is not all of them.
+  const netChip = STATS.missingNet
+    ? 'net <b>' + esc(fmtSigned(STATS.net)) + '</b> over ' + STATS.netRows + ' of ' + STATS.count + ' rows'
+    : 'net <b>' + esc(fmtSigned(STATS.net)) + '</b>';
+  const periodChip = STATS.missingDate
+    ? esc(period) + ' (' + STATS.missingDate + ' undated)'
+    : esc(period);
   $('strip').innerHTML =
     '<span class="chip"><b>' + STATS.count + '</b> transactions</span>' +
-    '<span class="chip">' + esc(period) + '</span>' +
-    '<span class="chip">net <b>' + esc(fmtSigned(STATS.net)) + '</b></span>' +
+    '<span class="chip' + (STATS.missingDate ? ' med' : '') + '">' + periodChip + '</span>' +
+    '<span class="chip' + (STATS.missingNet ? ' med' : '') + '">' + netChip + '</span>' +
     (c.high ? '<span class="chip high click" data-goto="findings"><b>' + c.high + '</b> critical</span>' : '') +
     (c.med ? '<span class="chip med click" data-goto="findings"><b>' + c.med + '</b> warnings</span>' : '') +
     (c.info ? '<span class="chip info click" data-goto="findings"><b>' + c.info + '</b> info</span>' : '');
@@ -1195,7 +1517,13 @@ function buildBriefing(){
   L.push('');
   L.push('Source: ' + s.count + ' transactions, ' + (s.min ? fmtDate(s.min) + ' to ' + fmtDate(s.max) : 'no parseable dates') + '.');
   L.push('Net movement ' + fmtSigned(s.net) + '; VAT ' + fmtSigned(s.tax) + '.');
-  if (MASK) L.push('Account names and narrative are masked at source.');
+  if (MASK){
+    // Say what is and is not covered. References are free text in Sage and routinely
+    // carry client identity ("INV-NHS-TRUST-4003"), and they reach the briefing through
+    // finding titles and descriptions — claiming a blanket mask would be untrue.
+    L.push('Account names and narrative are masked at source. Amounts, dates and document');
+    L.push('references are NOT masked — references appear in the findings below.');
+  }
   L.push('');
   L.push('## Findings (' + FINDINGS.length + ')');
   for (const f of FINDINGS){
@@ -1225,6 +1553,9 @@ async function askClaude(){
   if (!brief){ toast('Generate the briefing pack first'); return; }
   if (!key){ toast('Paste your Anthropic API key'); return; }
   if (!q){ toast('Type a question'); return; }
+  // The button being enabled is not the same thing as consent being given. Re-read the
+  // checkbox here so this is the single gate everything passes through.
+  if (!$('aiConsent').checked){ toast('Tick the consent box before sending anything'); return; }
   const route = routeModel($('aiModel').value, q, FINDINGS, TXS.length);
   $('btnAsk').disabled = true;
   $('aiStatus').innerHTML = '<span class="spin"></span>Asking ' + esc(route.label) + '…';
@@ -1265,6 +1596,9 @@ async function askClaude(){
     out.textContent = 'Request failed: ' + e.message + '\n\nIf this is a CORS or key error, check the key starts sk-ant- and has API access enabled.';
     out.style.display = 'block';
   } finally {
+    // The key is never persisted; blanking the field also keeps it out of browser
+    // session-restore and password-manager save prompts.
+    $('aiKey').value = '';
     $('btnAsk').disabled = !$('aiConsent').checked;
     $('aiStatus').textContent = '';
   }
@@ -1351,8 +1685,8 @@ $('btnMask').addEventListener('click', () => {
 });
 
 function loadDemo(){
-  $('paste').value = DEMO_CSV;
-  load(DEMO_CSV, new Date(Date.UTC(2026, 6, 15)));  // pinned so the demo is deterministic
+  $('paste').value = DEMO_LEDGER;
+  load(DEMO_LEDGER, new Date(Date.UTC(2026, 6, 15)));  // pinned so the demo is deterministic
   toast('Demo ledger loaded — deliberately dirty');
 }
 $('btnDemo').addEventListener('click', loadDemo);

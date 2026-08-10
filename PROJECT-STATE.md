@@ -47,9 +47,17 @@ parallel run is **not possible** in the window. Consequences and required action
 - `index.html` — **Atrium home dashboard**: module cards, the "getting off Sage" running
   order, privacy footer. Every module carries an identical shared app bar. The former
   `index.html` (JSON X-Ray, payload workbench) is now `json.html`.
-- `sage.html` — Sage X-Ray (ledger workbench): 15 detector families, Benford analysis,
+- `sage.html` — Sage X-Ray (ledger workbench): 21 detector families, Benford analysis,
   AI briefing pack, consent-gated BYO-key Ask Claude with complexity model routing.
-  Merged in PR #3, live on Pages.
+  Merged in PR #3, live on Pages. **Adversarially audited across four dimensions**
+  (parsing / detectors / dashboard arithmetic / AI boundary + privacy). The privacy
+  contract held — one data-bearing endpoint, no storage API used at all, auto-routing
+  provably cannot reach Fable, no XSS. The arithmetic did not: six critical parsing
+  defects that silently dropped money out of headline totals, two critical dashboard
+  defects (a P&L breakdown that did not sum to its own total, and `Math.abs` in
+  `fmtGBP`), a Benford gate that accused every small ledger, and a threshold-skimming
+  detector that flagged ~100% of ordinary ledgers as possible fraud. All fixed.
+  `tests/sage.test.mjs` (116 assertions) is the regression suite — **keep it green**.
 - `migrate.html` — Migration X-Ray (Sage → ERPNext): convert exports to ERPNext import
   packs, parallel-run reconciliation, cutover checklist. Merged in PR #4, live.
   Adversarially reviewed (15 agents): 12 defects found and fixed, three of them
@@ -78,12 +86,16 @@ if `atrium-accounts` is refused. Live URLs are now
 ## In flight / next steps
 
 - PR #6 open (draft): the Atrium shell plus the BOM costing fixes.
-- Write committed test suites for `sage.html` and `migrate.html` under `tests/`, in the
-  shape of `tests/bom.test.mjs`. The `migrate.html` suite from an earlier session was
-  written into a scratch directory and no longer exists — its 17 regressions cannot
-  currently be re-checked, which is the gap to close first.
-- `sage.html`'s pure layer has never been adversarially audited. The BOM audit found five
-  critical defects in code that looked fine; assume the ledger has its own.
+- **Write `tests/migrate.test.mjs`.** It is now the only app with no committed suite. Its
+  17 fixed defects — three of them false-clean reconciliation bugs, and the reconciliation
+  verdict is what gates cutover — cannot currently be re-checked. Highest-value remaining
+  engineering task.
+- **Audit `migrate.html`'s pure layer again after that.** Every app audited so far has come
+  back with critical arithmetic defects in code that read fine; migrate.html was audited
+  before the other two, to a narrower brief, and its converters have changed since.
+- Consider raising with the client that the ledger tool now reports coverage
+  (`net … over 184 of 186 rows`). If their real export produces a large gap there, that is
+  a migration blocker worth knowing about early, not a display quirk.
 - ERPNext import column headers (both `migrate.html` and `bom.html`) are best-effort
   against v15 Data Import templates — **must be verified against the client's live
   instance in Phase 0** before bulk import.
