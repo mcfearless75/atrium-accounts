@@ -13,10 +13,17 @@ A single-file, zero-dependency, fully client-side JSON inspection webapp aimed a
 ```
 index.html                    ← the entire app (HTML + CSS + JS in one file)
 sage.html                     ← sister app: Sage X-Ray — Ledger Workbench (same one-file rules)
+migrate.html                  ← sister app: Migration X-Ray — Sage 50 → ERPNext (same one-file rules)
 CLAUDE.md                     ← this file
 README.md                     ← user-facing docs + Pages setup
+.claude/skills/               ← project skills: xray-conventions, sage-migration
+.claude/agents/               ← agent defs: migration-auditor (adversarial pure-layer reviewer)
 .github/workflows/pages.yml   ← GitHub Pages deploy (publishes repo root on push to main)
 ```
+
+Read the `xray-conventions` skill before modifying any app; read `sage-migration` before
+touching migrate.html or anything Sage/ERPNext. After pure-layer changes, run the
+`migration-auditor` agent.
 
 There is no build step, no package.json, no framework. Keep it that way unless a feature genuinely cannot be done in vanilla JS (unlikely). The single-file constraint is a feature: it must remain trivially deployable to GitHub Pages / Vercel / an intranet share by copying one file.
 
@@ -164,14 +171,33 @@ key storage. The briefing itself is built locally and respects `MASK`.
 
 **Model routing.** `routeModel(choice, question, findings, txCount)` (pure layer) picks the
 model. Manual tiers: Fast = `claude-haiku-4-5`, Balanced = `claude-sonnet-5`, Deep =
-`claude-opus-5`. Auto scores ledger complexity (severity-weighted findings, capped at 12,
-plus a size bump) plus question shape (analytical keywords, multiple questions, length) and
-routes ≥14 → deep, ≥8 → balanced, else fast. The chosen model and the reason are always
-surfaced to the user (`#aiMeta`). Keep routing logic in the pure layer.
+`claude-opus-5`, Maximum = `claude-fable-5` (**manual only** — auto never routes to it).
+Auto scores ledger complexity (severity-weighted findings, capped at 12, plus a size bump)
+plus question shape (analytical keywords, multiple questions, length) and routes ≥14 →
+deep, ≥6 → balanced, else fast. The chosen model and the reason are always surfaced to the
+user (`#aiMeta`). Keep routing logic in the pure layer.
+
+**Two views.** `#views` switches between **Dashboard** (full-width overview — the default
+landing view after load) and **Workbench** (the original split: transaction grid + findings /
+insights / AI tabs). Non-specialist users live on the Dashboard; analysts drill into the
+Workbench. Anything added to one must respect `MASK` in both.
+
+**Dashboard aggregation** (pure layer): `classifyNominal` maps Sage UK nominal ranges to
+kinds; `classifyTx` is direction-aware — sales/purchase types use document sign
+(SI/PI +, SC/PC -), and journals apply double-entry signs (a JD to an income nominal
+*reduces* income). Only genuine sales/purchase documents populate the customer/supplier
+rankings — bank and journal accounts are excluded. `buildDashboard` returns KPIs, monthly
+income/expense series, expense categories, top customers/suppliers, a P&L split and a VAT
+summary. Transactions with unreadable dates are counted in totals but cannot be plotted —
+`undated`/`undatedIncome`/`undatedExpense` exist so the chart discloses the gap rather than
+silently under-reporting. Never let a surface report a total it did not actually examine.
 
 **Smoke test (sage.html)** after any change:
 
-1. Demo loads; strip shows 4 critical / 5 warnings / 6 info; all 15 detector families appear.
+1. Demo loads and lands on **Dashboard**; strip shows 4 critical / 5 warnings / 6 info;
+   all 15 detector families appear in the Workbench.
+1b. Dashboard: KPI row, monthly grouped-bar chart with the undated-transactions note,
+   ranked bars filled, P&L and VAT summaries reconcile, both report CSVs download.
 2. Click a finding row-link → grid scrolls, row highlighted.
 3. Mask toggle hides Account + Details in grid, top-accounts list, and regenerated briefing.
 4. Insights: Benford chart renders with observed bars + expected markers; data table opens.
@@ -180,6 +206,35 @@ surfaced to the user (`#aiMeta`). Keep routing logic in the pure layer.
    ticked; model selector defaults to Auto and the answer is annotated with the routed model.
 7. `node --check` passes on the extracted script block; the pure layer runs headless when
    sliced at the DOM-layer marker.
+
+## Sister app: Migration X-Ray — Sage 50 → ERPNext (`migrate.html`)
+
+Same one-file/IIFE/pure-DOM-split rules. Tooling for the client's Sage 50 → self-hosted
+ERPNext migration (parallel run, cutover at Sage contract expiry). Domain knowledge lives
+in the `sage-migration` skill — read it first.
+
+Three tabs: **Convert** (Sage exports → ERPNext import CSVs with defect profiling),
+**Reconcile** (trial-balance or transaction-level comparison between the two systems
+during the parallel run; "clean" report gates cutover), **Checklist** (cutover gates;
+ticks in localStorage — never client data).
+
+Key pure functions: `detectEntity` (fuzzy header + filename-hint scoring — the filename
+tie-breaks customers vs suppliers), `convertParties` / `convertItems` / `convertNominal`
+(→ ERPNext v15 Data Import shapes; opening journal must balance and reports its delta),
+`rootTypeFor` (Sage UK nominal ranges → ERPNext root types), `parseMoney` (strict —
+rejects malformed amounts; accepts `(1,250.00)` bracket negatives), `reconcile`/`parseSide`
+(TB or transaction shape auto-detect, per-account aggregation, ref+amount multiset diff).
+
+**Smoke test (migrate.html)** after any change:
+
+1. Demo loads all four exports; strip shows blocking issues + warnings; every issue class
+   fires (dup refs, bad VAT no, missing postcode, dup stock code, negative qty, missing
+   UoM, cost>sale, zero-cost stock, suspense-range nominal, unparseable amount, TB
+   imbalance).
+2. Each entity card offers its download(s); downloaded CSVs re-parse cleanly.
+3. Reconcile demo pair → 2 deltas + 1 Sage-only account, report downloads as .md.
+4. Checklist ticks persist across reload and reset works.
+5. `node --check` passes; pure layer runs headless when sliced at the DOM-layer marker.
 
 ## Deployment
 

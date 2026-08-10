@@ -26,6 +26,7 @@ A single-file, zero-dependency, fully client-side JSON inspection webapp for dat
 
 A sister app in the same file, same rules: single-file, zero-dependency, fully client-side — built for clients running **Sage**. Paste or drop a Sage 50 audit-trail/transaction CSV (headers matched fuzzily, any column order) or Sage Business Cloud API JSON, and a ledger-specific quality engine scans it:
 
+- **Dashboard view (default)** — lands on a plain-English overview rather than a wall of transactions: income / expenditure / surplus / VAT KPI tiles, a "needs your attention" panel ranking what the checks found, a monthly money-in-vs-money-out chart, expenditure by nominal category, top customers, and downloadable profit &amp; loss and VAT summaries. Switch to **Workbench** for the transaction-level detail.
 - **15 detector families** — duplicate postings, VAT-vs-tax-code arithmetic (T0/T1/T2/T5/T9 at UK rates), unbalanced journals, sales-invoice sequence gaps, amounts skimming just below £1k/£5k/£10k/£25k approval thresholds, credits posted as negative invoices, future-dated / weekend / stale / unparseable dates, missing references and tax codes, round-sum postings, and a **Benford's-law first-digit analysis** (Nigrini MAD bands) with an inline chart.
 - **Findings link to rows** — click a finding to jump to and highlight the offending transactions; flagged rows are tinted by severity in the grid.
 - **Mask toggle** — hides account names and narrative across the grid, insights and every export, so screenshots and briefs are safe to share.
@@ -35,6 +36,16 @@ A sister app in the same file, same rules: single-file, zero-dependency, fully c
 - **Demo ledger** — deliberately dirty; fires all 15 detector families.
 
 Open `sage.html` — it deploys alongside `index.html` on the same Pages site.
+
+## Migration X-Ray — Sage 50 → ERPNext (`migrate.html`)
+
+Third app in the family, built for moving a client off Sage 50 onto self-hosted ERPNext via a parallel run:
+
+- **Convert** — drop Sage 50 exports (customers, suppliers, products, nominal/trial balance; fuzzy header matching, filename-aware entity detection) and get **ERPNext-ready import CSVs** back: Customer/Supplier/Address/Item files, a chart-of-accounts file with Sage nominal ranges mapped to ERPNext root types, and a balanced opening journal. Every export is profiled first — duplicate references, invalid VAT numbers, negative stock, zero-cost valuations, suspense-range balances, unparseable amounts, and an out-of-balance TB are all flagged before anything is imported.
+- **Reconcile** — paste the same period from both systems (trial balances or transaction lists) and get an accountant-ready difference report: per-account deltas, accounts on one side only, transactions missing or mutated. Run weekly during the parallel run; a clean report gates cutover. Downloads as Markdown.
+- **Cutover checklist** — the phase-gated go-live list from the migration plan, with persistent ticks.
+
+Fully client-side like its siblings — safe for live client data.
 
 ## Run it
 
