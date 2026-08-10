@@ -30,7 +30,11 @@ Update this file at the end of any session that changes the plan or ships work.
   AI briefing pack, consent-gated BYO-key Ask Claude with complexity model routing.
   Merged in PR #3, live on Pages.
 - `migrate.html` — Migration X-Ray (Sage → ERPNext): convert exports to ERPNext import
-  packs, parallel-run reconciliation, cutover checklist. **On branch, PR not yet opened.**
+  packs, parallel-run reconciliation, cutover checklist. **Draft PR #4 open.**
+  Adversarially reviewed (15 agents): 12 defects found and fixed, three of them
+  critical false-clean reconciliation bugs. 17-case headless regression suite added —
+  keep it passing; the reconciliation "clean" verdict gates cutover, so any change that
+  can make it clean on unexamined data is a critical bug, not a nicety.
 - `.claude/skills/xray-conventions` + `.claude/skills/sage-migration` — auto-loaded
   project memory; `.claude/agents/migration-auditor` — adversarial pure-layer reviewer.
 - Client proposal artifact (ERPNext recommendation, MTD plan, costs, risks, phases):
@@ -38,11 +42,11 @@ Update this file at the end of any session that changes the plan or ships work.
 
 ## In flight / next steps
 
-- **Adversarial review of `migrate.html`'s pure layer was still running when the last
-  session ended** — findings never seen. Re-run it before opening the PR:
-  use the `migration-auditor` agent against `migrate.html`, or re-run the workflow at
-  `~/.claude/projects/-home-user-Json/.../workflows/scripts/migrate-adversarial-review-*.js`.
-- Then: open a draft PR for the `migrate.html` branch.
+- Draft PR #4 awaiting review/merge: https://github.com/mcfearless75/Json/pull/4
+- Repo housekeeping PaulMc asked about and hasn't decided: the repo is still named
+  `Json` though it now holds three apps and the migration project — consider renaming
+  it (GitHub redirects the old URL) vs splitting the Sage work into its own repo.
+  Also wants a local clone under `C:\Users\LAPTOP80\Projects` for backup.
 - ERPNext import column headers are best-effort against v15 Data Import templates —
   **must be verified against the client's live instance in Phase 0** before bulk import.
 - Candidate next build: **BOM X-Ray** (circular refs, cost roll-up verification, orphan
