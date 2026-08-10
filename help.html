@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atrium Help — How do I…?</title>
+<meta name="description" content="Plain-English guide to everyday jobs after moving off Sage 50: invoicing, payments, credit notes, VAT, and what each Sage word is called now.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#0d1117; --bg-raise:#161b22; --bg-raise2:#1c2330; --border:#2d333b;
+  --text:#e6edf3; --text-dim:#8b949e; --text-faint:#606a76;
+  --accent:#58a6ff; --accent-soft:rgba(88,166,255,.14);
+  --high:#f85149; --high-soft:rgba(248,81,73,.14);
+  --med:#d29922; --med-soft:rgba(210,153,34,.14);
+  --info:#3fb950; --info-soft:rgba(63,185,80,.12);
+  --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+  --radius:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:15px;line-height:1.6;min-height:100vh}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+button{font-family:inherit;color:inherit;background:none;border:none;cursor:pointer}
+a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* shared product bar (identical markup in every module) */
+.appbar{display:flex;align-items:center;gap:20px;padding:0 16px;background:#11161d;border-bottom:1px solid var(--border);flex-wrap:wrap;position:sticky;top:0;z-index:30}
+.appbar .brand{font-weight:700;font-size:14px;letter-spacing:-.2px;color:var(--text);padding:9px 0;white-space:nowrap;text-decoration:none}
+.appbar .brand:hover{color:var(--accent)}
+.appbar .brand span{color:var(--accent)}
+.appbar nav{display:flex;gap:2px;flex-wrap:wrap}
+.appbar nav a{padding:9px 12px;font-size:13px;font-weight:500;color:var(--text-dim);border-bottom:2px solid transparent;white-space:nowrap;text-decoration:none}
+.appbar nav a:hover{color:var(--text)}
+.appbar nav a.on{color:var(--accent);border-bottom-color:var(--accent);font-weight:600}
+.appbar .env{margin-left:auto;font-size:10.5px;color:var(--text-faint);letter-spacing:.05em;padding:9px 0;white-space:nowrap}
+
+.wrap{max-width:940px;margin:0 auto;padding:34px 20px 90px}
+
+h1{font-size:clamp(25px,4vw,33px);line-height:1.15;letter-spacing:-.02em;font-weight:700}
+.sub{color:var(--text-dim);margin-top:10px;font-size:16px;max-width:60ch}
+
+/* search */
+.searchwrap{position:sticky;top:39px;z-index:20;background:var(--bg);padding:18px 0 12px;margin-top:22px}
+.searchbox{display:flex;align-items:center;gap:10px;background:var(--bg-raise);border:1px solid var(--border);border-radius:10px;padding:0 14px}
+.searchbox:focus-within{border-color:var(--accent)}
+.searchbox svg{width:17px;height:17px;stroke:var(--text-faint);fill:none;stroke-width:2;flex:none}
+#q{flex:1;background:none;border:none;color:var(--text);font-size:16px;padding:13px 0;font-family:inherit}
+#q::placeholder{color:var(--text-faint)}
+.kbd{font-family:var(--mono);font-size:11px;color:var(--text-faint);border:1px solid var(--border);border-radius:4px;padding:1px 6px;flex:none}
+#clearBtn{color:var(--text-faint);font-size:19px;line-height:1;padding:4px 2px;display:none}
+#clearBtn:hover{color:var(--text)}
+
+.chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}
+.chip{font-size:12.5px;padding:5px 12px;border-radius:20px;border:1px solid var(--border);background:var(--bg-raise);color:var(--text-dim);font-weight:500}
+.chip:hover{color:var(--text);border-color:var(--text-faint)}
+.chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+.count{font-size:12.5px;color:var(--text-faint);margin-top:12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+.count button{font-size:12.5px;color:var(--accent);font-weight:500}
+.count button:hover{text-decoration:underline}
+
+h2{font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text-faint);margin:34px 0 14px}
+
+/* task cards */
+.task{background:var(--bg-raise);border:1px solid var(--border);border-radius:10px;margin-bottom:9px;overflow:hidden}
+.task.open{border-color:var(--accent)}
+.task > .head{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:14px 16px}
+.task > .head:hover{background:var(--bg-raise2)}
+.task .tw{width:11px;flex:none;color:var(--text-faint);font-size:11px;transition:transform .15s}
+.task.open .tw{transform:rotate(90deg);color:var(--accent)}
+@media (prefers-reduced-motion:reduce){.task .tw{transition:none}}
+.task .t{font-size:15px;font-weight:600;flex:1;letter-spacing:-.01em}
+.task .badge{font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;padding:2px 8px;border-radius:20px;background:var(--bg);color:var(--text-faint);border:1px solid var(--border);flex:none}
+.task .badge.every{background:var(--info-soft);color:var(--info);border-color:transparent}
+.task .badge.move{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.task .badge.stuck{background:var(--med-soft);color:var(--med);border-color:transparent}
+.body{display:none;padding:2px 16px 18px 39px;border-top:1px solid var(--border)}
+.task.open .body{display:block}
+.was{font-size:13px;color:var(--text-dim);background:var(--bg);border-left:2px solid var(--border);padding:9px 13px;border-radius:0 6px 6px 0;margin:14px 0}
+.was b{color:var(--text);font-weight:600}
+ol.steps{list-style:none;counter-reset:st;margin:14px 0 0}
+ol.steps li{counter-increment:st;display:grid;grid-template-columns:auto 22px 1fr;gap:11px;align-items:start;padding:7px 0}
+ol.steps li::after{content:counter(st);grid-column:2;grid-row:1;width:22px;height:22px;border-radius:50%;background:var(--bg);border:1px solid var(--border);color:var(--text-faint);font-size:11.5px;font-weight:600;display:grid;place-items:center;margin-top:1px}
+ol.steps li .tx{font-size:14px;line-height:1.6}
+ol.steps li .tx code{font-family:var(--mono);font-size:12.5px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:1px 6px;color:var(--text)}
+ol.steps input[type=checkbox]{width:16px;height:16px;margin-top:5px;accent-color:var(--accent);cursor:pointer;flex:none}
+ol.steps li.done .tx{color:var(--text-faint);text-decoration:line-through}
+.note{font-size:13.5px;line-height:1.6;border-radius:6px;padding:10px 13px;margin-top:14px;border:1px solid}
+.note.warn{background:var(--med-soft);border-color:rgba(210,153,34,.35);color:#e8c66a}
+.note.tip{background:var(--info-soft);border-color:rgba(63,185,80,.3);color:#8bd99b}
+.note b{font-weight:700}
+
+/* translator */
+table.tr{width:100%;border-collapse:collapse;font-size:14px;background:var(--bg-raise);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+table.tr th{text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);padding:11px 15px;background:var(--bg-raise2);font-weight:600}
+table.tr td{padding:11px 15px;border-top:1px solid var(--border);vertical-align:top}
+table.tr td:first-child{color:var(--text-dim);width:38%}
+table.tr td b{color:var(--text);font-weight:600}
+table.tr td small{display:block;color:var(--text-faint);font-size:12.5px;margin-top:2px;line-height:1.5}
+.tblwrap{overflow-x:auto}
+
+.empty{text-align:center;padding:44px 20px;color:var(--text-dim);line-height:1.7}
+.empty b{color:var(--text);display:block;margin-bottom:6px;font-size:16px}
+
+.foot{border-top:1px solid var(--border);margin-top:44px;padding-top:20px;font-size:12.5px;color:var(--text-faint);line-height:1.7}
+.foot b{color:var(--text-dim)}
+
+@media print{
+  .appbar,.searchwrap,.chips,.count,.foot{display:none}
+  body{background:#fff;color:#000}
+  .task,.body{display:block !important;background:#fff;border-color:#ccc}
+  .task .tw,ol.steps input{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="appbar">
+  <a class="brand" href="index.html">Atrium<span>.</span></a>
+  <nav><a href="index.html">Home</a><a href="sage.html">Ledger</a><a href="bom.html">Bills of materials</a><a href="migrate.html">Migration</a><a href="json.html">Payloads</a><a href="help.html" class="on">Help</a></nav>
+  <span class="env">100% CLIENT-SIDE</span>
+</div>
+
+<div class="wrap">
+
+  <h1>How do I…?</h1>
+  <p class="sub">Everyday jobs in plain English, and what each Sage word is called now. Start typing what you want to do — you do not need to know what it is called.</p>
+
+  <div class="searchwrap">
+    <div class="searchbox">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="q" type="text" placeholder="e.g. invoice, refund a customer, VAT, who owes me" autocomplete="off" spellcheck="false" aria-label="Search help">
+      <button id="clearBtn" aria-label="Clear search">&times;</button>
+      <span class="kbd">/</span>
+    </div>
+    <div class="chips" id="chips"></div>
+  </div>
+
+  <div class="count">
+    <span id="countTxt"></span>
+    <button id="expandAll">Open all</button>
+    <button id="collapseAll">Close all</button>
+    <button id="resetTicks">Clear my ticks</button>
+    <button id="printBtn">Print</button>
+  </div>
+
+  <div id="results"></div>
+
+  <div id="glossary">
+    <h2>What it was called in Sage → what it is called now</h2>
+    <div class="tblwrap"><table class="tr">
+      <thead><tr><th>In Sage 50</th><th>Here</th></tr></thead>
+      <tbody id="glossBody"></tbody>
+    </table></div>
+  </div>
+
+  <div class="foot">
+    <b>A note on wording.</b> Menu names move slightly between versions, so this guide tells you what to <i>search for</i> rather than which menu to click — the search bar at the top of the new system is the fastest route to everything and does not change.
+    If a screen does not look like the description, search for the name in bold and you will land in the right place.<br>
+    <b>Nothing on this page is sent anywhere.</b> Your ticks are remembered in this browser only.
+  </div>
+
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* ================= CONTENT ================= */
+/* Written for someone whose day is invoices and payments, not for an accountant.
+   Each task carries `was` — the Sage equivalent — because the hardest part of a
+   migration is not the new buttons, it is not knowing what the new word is. */
+
+const CATS = [
+  {id:'every', label:'Everyday jobs'},
+  {id:'move',  label:'Moving off Sage'},
+  {id:'stuck', label:'Something is wrong'}
+];
+
+const TASKS = [
+  {
+    id:'invoice',
+    cat:'every',
+    t:'Send an invoice to a customer',
+    tags:'invoice bill charge customer sales raise create new si sales invoice send email',
+    was:'In Sage this was <b>Customers → New Invoice</b>, and it posted the moment you saved it.',
+    steps:[
+      'In the search bar at the top, type <code>new sales invoice</code> and pick it.',
+      'Choose the <b>Customer</b>. If they are not in the list yet, see “Add a new customer” below — you cannot invoice someone who does not exist yet.',
+      'Check the date. It defaults to today, which is usually what you want.',
+      'Add a line for each thing you are charging for: pick the <b>Item</b>, set the quantity and the rate.',
+      'Check the VAT block underneath. The tax template usually fills itself in from the customer — if the total looks wrong, that is the first place to look.',
+      'Click <b>Save</b>. It is now a <b>draft</b>: nothing has hit the accounts and you can still change anything.',
+      'Read it once more, then click <b>Submit</b>. That is the moment it becomes real and posts to the accounts.',
+      'Click <b>Print</b> or <b>Email</b> to send it to the customer.'
+    ],
+    notes:[
+      {k:'warn', h:'Save and Submit are two different things.', b:'This is the single biggest difference from Sage. <b>Save</b> keeps a draft you can still edit. <b>Submit</b> posts it and locks it. Nothing reaches the accounts — or the customer’s balance — until you Submit.'}
+    ]
+  },
+  {
+    id:'payment',
+    cat:'every',
+    t:'Record that a customer has paid you',
+    tags:'payment paid receipt money in bank receive allocate match remittance cash',
+    was:'In Sage this was <b>Bank → Customer Receipt</b>, ticking off the invoices being paid.',
+    steps:[
+      'Open the invoice they are paying. The quickest way is to search <code>sales invoice</code> and find it in the list.',
+      'Click <b>Create</b> at the top right, then <b>Payment</b>.',
+      'Check the amount. If they have paid the invoice in full, it is already filled in.',
+      'If they have paid <b>part</b> of it, change the amount to what actually arrived — the rest stays outstanding against the invoice.',
+      'Set the account the money landed in (your current account).',
+      'Click <b>Save</b>, then <b>Submit</b>.'
+    ],
+    notes:[
+      {k:'tip', h:'Paid several invoices in one lump?', b:'Search <code>payment entry</code> and start one from scratch instead. Pick the customer, enter the total that arrived, and the outstanding invoices appear underneath so you can tick off which ones it covers.'}
+    ]
+  },
+  {
+    id:'fix-invoice',
+    cat:'every',
+    t:'Change or cancel an invoice you have already sent',
+    tags:'edit change amend cancel delete wrong mistake fix correct submitted locked cannot edit',
+    was:'In Sage you could often just open the invoice and correct it, or delete it if nothing had been paid.',
+    steps:[
+      'Open the invoice.',
+      'If it still says <b>Draft</b>, just change it and save. You are done.',
+      'If it says <b>Submitted</b>, you cannot edit it. Click <b>Cancel</b> instead — this reverses it out of the accounts and leaves a record that it existed.',
+      'Now click <b>Amend</b>. That gives you a fresh copy of the invoice, as a draft, with everything already filled in.',
+      'Correct the copy, then Save and Submit it as normal.'
+    ],
+    notes:[
+      {k:'warn', h:'Cancelled invoices do not disappear.', b:'That is deliberate and it is what your accountant wants — the audit trail shows the original, the cancellation, and the corrected version. The customer only ever sees the corrected one.'},
+      {k:'tip', h:'If the customer has already paid it,', b:'cancel the payment first, then the invoice. The system will not let you unpick them in the other order.'}
+    ]
+  },
+  {
+    id:'credit',
+    cat:'every',
+    t:'Refund a customer or write off an invoice (credit note)',
+    tags:'credit note refund return sc write off cancel charge reduce goodwill',
+    was:'In Sage this was a <b>Sales Credit (SC)</b>.',
+    steps:[
+      'Open the invoice you are crediting.',
+      'Click <b>Create</b>, then <b>Return / Credit Note</b>.',
+      'Everything is copied across with the quantities already negative. Change them if you are only crediting part of it.',
+      'Save, then Submit.',
+      'If you are actually paying money back, create a payment against the credit note in the same way you would record a receipt.'
+    ],
+    notes:[
+      {k:'tip', h:'Do not just delete the invoice.', b:'A credit note is the correct way to reverse something the customer has already been sent, and it is what keeps your VAT return right.'}
+    ]
+  },
+  {
+    id:'supplier-bill',
+    cat:'every',
+    t:'Enter a bill from a supplier',
+    tags:'supplier bill purchase invoice pi expense cost buy money out creditor',
+    was:'In Sage this was <b>Suppliers → New Invoice</b>, or batch entry.',
+    steps:[
+      'Search <code>new purchase invoice</code>.',
+      'Choose the <b>Supplier</b>.',
+      'Set the date on the bill — their date, not today’s.',
+      'Add the lines. If it is an overhead rather than something you stock, pick the expense account rather than a stock item.',
+      'Check the VAT total against the paper bill. If it does not match to the penny, the tax template is wrong.',
+      'Save, then Submit.',
+      'When you pay it, open it and use <b>Create → Payment</b>, exactly like a customer receipt but the other way round.'
+    ],
+    notes:[]
+  },
+  {
+    id:'owes',
+    cat:'every',
+    t:'See who owes you money',
+    tags:'owes owed debtors aged debt outstanding unpaid chase overdue receivable statement',
+    was:'In Sage this was the <b>Aged Debtors</b> report.',
+    steps:[
+      'Search <code>accounts receivable</code>.',
+      'Set the date to today and run it.',
+      'You get every unpaid invoice, who owes it, and how overdue it is.',
+      'The ageing columns (30 / 60 / 90 days) are the ones to look at when deciding who to chase.'
+    ],
+    notes:[
+      {k:'tip', h:'For what you owe other people,', b:'the same report exists as <code>accounts payable</code>.'}
+    ]
+  },
+  {
+    id:'vat',
+    cat:'every',
+    t:'Do the VAT return',
+    tags:'vat return hmrc mtd tax quarter making tax digital submit file',
+    was:'In Sage this was <b>VAT Return</b>, and it filed straight to HMRC from inside Sage.',
+    steps:[
+      'Make sure every invoice and bill for the quarter is <b>submitted</b>, not sitting in draft. Drafts are invisible to the VAT return.',
+      'Run the VAT report for the quarter and check the figures against what you expect.',
+      'Before you file anything, run the same quarter through the <a href="sage.html">Ledger</a> tool here — it will tell you if any VAT is inconsistent with its tax code, which is the usual cause of a return being wrong.',
+      'File it with HMRC through whichever route we set up for you at cutover.'
+    ],
+    notes:[
+      {k:'warn', h:'This is the one to talk to us about before the first time.', b:'Filing VAT is a legal obligation with deadlines, and the first quarter after a move is the one most likely to have something odd in it. Do not do the first one alone.'}
+    ]
+  },
+  {
+    id:'new-customer',
+    cat:'every',
+    t:'Add a new customer',
+    tags:'customer new add create account record contact address',
+    was:'In Sage this was <b>Customers → New</b>, and everything lived on one card.',
+    steps:[
+      'Search <code>new customer</code>.',
+      'Put in the <b>Customer Name</b>. Use their proper trading name and get it right first time — see the warning below.',
+      'Save.',
+      'Add their address and contact details using the <b>Contact</b> and <b>Address</b> links on the customer record. These are separate records that point at the customer, which is why they are not all on one screen.'
+    ],
+    notes:[
+      {k:'warn', h:'The name is the identity here.', b:'Sage identified customers by a short account reference like <code>ACME01</code>. This system identifies them by <b>name</b>. Two customers with the same name will collide, so if you genuinely have two, make the names different — “Acme Ltd (Leeds)” and “Acme Ltd (Hull)”.'}
+    ]
+  },
+  {
+    id:'new-item',
+    cat:'every',
+    t:'Add a new product or service you sell',
+    tags:'item product service stock code new add price sell',
+    was:'In Sage this was a <b>Product record</b>, and services were often just typed straight onto the invoice.',
+    steps:[
+      'Search <code>new item</code>.',
+      'Give it an <b>Item Code</b> — this is the equivalent of the Sage stock code.',
+      'Set the <b>unit of measure</b>. Each, Hours, Metres, whatever you actually sell it in.',
+      'If it is a service rather than something you hold in stock, untick <b>Maintain Stock</b>. This matters — otherwise the system expects to track quantities you do not have.',
+      'Set the selling price, and the cost if you buy it in.',
+      'Save.'
+    ],
+    notes:[]
+  },
+  {
+    id:'check-sage',
+    cat:'move',
+    t:'Check what state the Sage data is actually in',
+    tags:'check audit trail quality clean books before migrate defects ledger export',
+    was:'Nothing in Sage did this — it is the point of the Ledger tool.',
+    steps:[
+      'Export the full audit trail from Sage as a CSV.',
+      'Open the <a href="sage.html">Ledger</a> tool and drop the file on it.',
+      'Read the top strip. It tells you how many transactions were examined and, importantly, how many it <b>could not</b> read.',
+      'Work down the findings list, most serious first. Anything marked critical is worth fixing in Sage before we move it.'
+    ],
+    notes:[
+      {k:'tip', h:'Do this early.', b:'Fixing bad data is much easier while Sage is still live. Once the licence lapses it becomes very hard.'}
+    ]
+  },
+  {
+    id:'convert',
+    cat:'move',
+    t:'Turn the Sage exports into import files',
+    tags:'convert export import migrate erpnext csv customers suppliers products nominal',
+    was:'',
+    steps:[
+      'Export from Sage: customers, suppliers, products, the nominal codes / trial balance, and the audit trail.',
+      'Open the <a href="migrate.html">Migration</a> tool and drop all the files on it at once.',
+      'Each file gets its own card showing what it thinks the file is. <b>Check that label</b> — customers and suppliers have almost identical columns, so if it says the wrong thing, use the button to switch it.',
+      'Read the issues on each card before downloading anything. They are problems in the Sage data, not problems with the conversion.',
+      'Download the import files from each card.'
+    ],
+    notes:[
+      {k:'warn', h:'Do not import anything until the issues are dealt with.', b:'A duplicate customer name or a stock code that appears twice will merge two records together on import, and unpicking that afterwards is far more work than fixing it first.'}
+    ]
+  },
+  {
+    id:'reconcile',
+    cat:'move',
+    t:'Check both systems agree during the changeover',
+    tags:'reconcile compare parallel run match check totals agree cutover sign off',
+    was:'',
+    steps:[
+      'Run the same period from both systems — the trial balance from each is the simplest.',
+      'Open the <a href="migrate.html">Migration</a> tool and go to the <b>Reconcile</b> tab.',
+      'Paste the Sage figures on the left and the new system’s on the right, then run it.',
+      'Read the warnings <i>before</i> the table. If it says rows were excluded, the comparison did not cover everything and a clean result would not mean much.',
+      'Investigate every difference until the report comes back clean.'
+    ],
+    notes:[
+      {k:'tip', h:'The clean report is the thing that matters.', b:'It is what your accountant signs off before we switch over for good. Keep the ones you run each week.'}
+    ]
+  },
+  {
+    id:'bom',
+    cat:'move',
+    t:'Check a bill of materials',
+    tags:'bom bill of materials assembly components parts cost roll up manufacturing',
+    was:'',
+    steps:[
+      'Export your BOM as one row per parent → component line.',
+      'Open the <a href="bom.html">Bills of materials</a> tool and drop it on.',
+      'The Overview names anything that could not be costed and tells you why, rather than showing a number that looks right but is not.',
+      'Use <b>Structure</b> to explode an assembly, and <b>Where used</b> to see everything a part feeds into before you change it.'
+    ],
+    notes:[]
+  },
+  {
+    id:'submitted',
+    cat:'stuck',
+    t:'I clicked Submit and now it will not let me edit',
+    tags:'submitted locked cannot edit greyed out read only amend cancel stuck',
+    was:'',
+    steps:[
+      'This is normal and it is not broken. Submitted means posted to the accounts.',
+      'Click <b>Cancel</b> on the document, then <b>Amend</b>.',
+      'You now have an editable draft copy. Fix it, Save, Submit.'
+    ],
+    notes:[
+      {k:'tip', h:'Why it works this way:', b:'once something has hit the accounts, quietly editing it would change figures you may already have reported. Cancel-and-amend leaves a trail instead.'}
+    ]
+  },
+  {
+    id:'missing',
+    cat:'stuck',
+    t:'I cannot find something that was in Sage',
+    tags:'missing cannot find lost where is search find gone not there',
+    was:'',
+    steps:[
+      'Use the search bar at the top of the new system rather than hunting through menus — type what the thing is called and it will find it.',
+      'If you are not sure what it is called now, check the translation table at the bottom of this page.',
+      'If it genuinely is not there, check whether it is still sitting in <b>draft</b> — drafts do not appear in reports or balances.',
+      'Still missing? Tell us which Sage screen you used to see it on. That is usually enough for us to find where it lives now.'
+    ],
+    notes:[]
+  },
+  {
+    id:'mismatch',
+    cat:'stuck',
+    t:'The numbers do not match what Sage said',
+    tags:'wrong numbers different mismatch balance does not agree totals off discrepancy',
+    was:'',
+    steps:[
+      'Check the date range is the same on both. This is the cause more often than anything else.',
+      'Check nothing is sitting in draft. Drafts are excluded from every total.',
+      'Run both sides through the <b>Reconcile</b> tab of the <a href="migrate.html">Migration</a> tool — it will tell you exactly which accounts differ and by how much, instead of leaving you to eyeball two reports.',
+      'If Reconcile warns that rows were excluded, deal with that first. A difference you have not examined is not the same as no difference.'
+    ],
+    notes:[
+      {k:'warn', h:'Do not adjust anything to make it match.', b:'Find out why it differs first. A balancing entry that hides a real problem is much harder to unpick at year end.'}
+    ]
+  },
+  {
+    id:'duplicate',
+    cat:'stuck',
+    t:'I have entered something twice',
+    tags:'duplicate twice double entered again repeat same invoice copy',
+    was:'',
+    steps:[
+      'If the duplicate is still a <b>draft</b>, just delete it.',
+      'If it has been <b>submitted</b>, cancel it. Do not amend it — you want it gone, not corrected.',
+      'If the customer has already paid against the duplicate, cancel the payment first, then the invoice.'
+    ],
+    notes:[
+      {k:'tip', h:'To catch these in bulk,', b:'run the ledger through the <a href="sage.html">Ledger</a> tool — the duplicate-postings check finds transactions identical in every field.'}
+    ]
+  }
+];
+
+const GLOSSARY = [
+  ['Nominal code',                'Account', 'They live in the Chart of Accounts. The numbers are the same ones you already know.'],
+  ['Nominal ledger',              'General Ledger', ''],
+  ['Customer / supplier account reference (ACME01)', 'Customer or Supplier name', 'The name is the identity here, not a short code. Your old Sage reference is kept on the record for looking things up.'],
+  ['Sales Invoice (SI)',          'Sales Invoice', ''],
+  ['Purchase Invoice (PI)',       'Purchase Invoice', ''],
+  ['Sales Credit (SC)',           'Credit Note', 'Created from the invoice it is crediting, with Create → Return / Credit Note.'],
+  ['Purchase Credit (PC)',        'Debit Note', ''],
+  ['Bank Payment (BP)',           'Payment Entry, type Pay', ''],
+  ['Bank Receipt (BR)',           'Payment Entry, type Receive', ''],
+  ['Journal debit / credit (JD / JC)', 'Journal Entry', 'One entry holds both sides, rather than two separate lines.'],
+  ['Tax code (T1, T0, T9)',       'Tax template', 'Attached to the customer or supplier, so it fills itself in on the invoice.'],
+  ['Aged Debtors',                'Accounts Receivable report', ''],
+  ['Aged Creditors',              'Accounts Payable report', ''],
+  ['Trial Balance',               'Trial Balance report', ''],
+  ['Product record',              'Item', 'Tick Maintain Stock only if you actually hold it. Services should have it unticked.'],
+  ['Stock take',                  'Stock Reconciliation', ''],
+  ['Department',                  'Cost Center', ''],
+  ['Posting / updating a batch',  'Submit', 'Save keeps a draft. Submit is the one that posts to the accounts.']
+];
+
+/* ================= DOM LAYER ================= */
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const STORE = 'atrium_help_v1';   // ticks only — never client data
+
+let ticks = {};
+try { ticks = JSON.parse(localStorage.getItem(STORE) || '{}') || {}; } catch(e){ ticks = {}; }
+const saveTicks = () => { try { localStorage.setItem(STORE, JSON.stringify(ticks)); } catch(e){} };
+
+let filter = '';
+let cat = 'all';
+const open = new Set();
+
+// Everything a task can be found by. Searching "refund" must reach the credit-note
+// task even though the word "refund" is not in its title.
+const haystack = t => (t.t + ' ' + t.tags + ' ' + t.was + ' ' +
+  t.steps.join(' ') + ' ' + t.notes.map(n => n.h + ' ' + n.b).join(' ')).toLowerCase();
+
+function matches(t, terms){
+  if (!terms.length) return true;
+  const h = haystack(t);
+  return terms.every(w => h.indexOf(w) !== -1);
+}
+
+function renderChips(){
+  const all = [{id:'all', label:'Everything'}].concat(CATS);
+  $('chips').innerHTML = all.map(c =>
+    '<button class="chip' + (cat === c.id ? ' on' : '') + '" data-cat="' + c.id + '">' + esc(c.label) + '</button>'
+  ).join('');
+}
+
+function render(){
+  const terms = filter.split(/\s+/).filter(Boolean);
+  const shown = TASKS.filter(t => (cat === 'all' || t.cat === cat) && matches(t, terms));
+  const host = $('results');
+
+  if (!shown.length){
+    host.innerHTML = '<div class="empty"><b>Nothing here matches “' + esc(filter) + '”.</b>' +
+      'Try a plainer word — “money in” rather than “remittance”.<br>' +
+      'If it is genuinely not covered, that is worth telling us: the gaps are the useful part.</div>';
+  } else {
+    let h = '';
+    let lastCat = null;
+    for (const t of shown){
+      if (t.cat !== lastCat && cat === 'all'){
+        lastCat = t.cat;
+        h += '<h2>' + esc((CATS.find(c => c.id === t.cat) || {}).label || '') + '</h2>';
+      }
+      const isOpen = open.has(t.id);
+      h += '<div class="task' + (isOpen ? ' open' : '') + '" id="t-' + t.id + '">' +
+        '<button class="head" data-task="' + t.id + '" aria-expanded="' + isOpen + '">' +
+          '<span class="tw">&#9654;</span>' +
+          '<span class="t">' + esc(t.t) + '</span>' +
+          '<span class="badge ' + t.cat + '">' + esc((CATS.find(c => c.id === t.cat) || {}).label || '') + '</span>' +
+        '</button>' +
+        '<div class="body">' +
+          (t.was ? '<div class="was">' + t.was + '</div>' : '') +
+          '<ol class="steps">' + t.steps.map((s, i) => {
+            const key = t.id + ':' + i;
+            const done = !!ticks[key];
+            return '<li class="' + (done ? 'done' : '') + '">' +
+              '<input type="checkbox" data-tick="' + key + '"' + (done ? ' checked' : '') +
+              ' aria-label="Mark step ' + (i+1) + ' done">' +
+              '<span class="tx">' + s + '</span></li>';
+          }).join('') + '</ol>' +
+          t.notes.map(n => '<div class="note ' + n.k + '"><b>' + n.h + '</b> ' + n.b + '</div>').join('') +
+        '</div></div>';
+    }
+    host.innerHTML = h;
+  }
+
+  const g = GLOSSARY.filter(row =>
+    !terms.length || terms.every(w => (row[0] + ' ' + row[1] + ' ' + row[2]).toLowerCase().indexOf(w) !== -1));
+  $('glossBody').innerHTML = g.map(r =>
+    '<tr><td>' + esc(r[0]) + '</td><td><b>' + esc(r[1]) + '</b>' +
+    (r[2] ? '<small>' + esc(r[2]) + '</small>' : '') + '</td></tr>').join('');
+  $('glossary').style.display = g.length ? '' : 'none';
+
+  const bits = [shown.length + (shown.length === 1 ? ' answer' : ' answers')];
+  if (filter) bits.push(g.length + ' matching word' + (g.length === 1 ? '' : 's') + ' in the table');
+  $('countTxt').textContent = bits.join(' · ');
+  $('clearBtn').style.display = filter ? 'block' : 'none';
+}
+
+/* events — delegated, so re-rendering never leaves stale listeners behind */
+$('results').addEventListener('click', e => {
+  const head = e.target.closest('[data-task]');
+  if (head){
+    const id = head.getAttribute('data-task');
+    if (open.has(id)) open.delete(id); else open.add(id);
+    render();
+    if (open.has(id)) $('t-' + id).scrollIntoView({block:'nearest'});
+    return;
+  }
+});
+$('results').addEventListener('change', e => {
+  const box = e.target.closest('[data-tick]');
+  if (!box) return;
+  const key = box.getAttribute('data-tick');
+  if (box.checked) ticks[key] = 1; else delete ticks[key];
+  saveTicks();
+  box.closest('li').classList.toggle('done', box.checked);
+});
+
+$('chips').addEventListener('click', e => {
+  const c = e.target.closest('[data-cat]');
+  if (!c) return;
+  cat = c.getAttribute('data-cat');
+  renderChips(); render();
+});
+
+let deb;
+$('q').addEventListener('input', e => {
+  clearTimeout(deb);
+  const v = e.target.value.trim().toLowerCase();
+  deb = setTimeout(() => {
+    filter = v;
+    // A search is a question — open what it found so the answer is on screen.
+    if (filter){
+      const terms = filter.split(/\s+/).filter(Boolean);
+      TASKS.forEach(t => { if (matches(t, terms) && (cat === 'all' || t.cat === cat)) open.add(t.id); });
+    }
+    render();
+  }, 120);
+});
+$('clearBtn').addEventListener('click', () => {
+  $('q').value = ''; filter = ''; open.clear(); render(); $('q').focus();
+});
+$('expandAll').addEventListener('click', () => { TASKS.forEach(t => open.add(t.id)); render(); });
+$('collapseAll').addEventListener('click', () => { open.clear(); render(); });
+$('printBtn').addEventListener('click', () => window.print());
+$('resetTicks').addEventListener('click', () => {
+  ticks = {}; saveTicks(); render();
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === '/' && document.activeElement !== $('q')){ e.preventDefault(); $('q').focus(); }
+  else if (e.key === 'Escape' && document.activeElement === $('q')){ $('clearBtn').click(); }
+});
+
+// Deep links: help.html#invoice opens that answer directly, so we can send someone
+// straight to the thing they asked about.
+function fromHash(){
+  const id = decodeURIComponent(location.hash.replace('#',''));
+  if (id && TASKS.some(t => t.id === id)){
+    open.add(id); render();
+    const el = $('t-' + id);
+    if (el) el.scrollIntoView({block:'center'});
+  }
+}
+window.addEventListener('hashchange', fromHash);
+
+renderChips();
+render();
+fromHash();
+})();
+</script>
+</body>
+</html>
