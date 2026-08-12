@@ -28,6 +28,44 @@ The one item on the client's original goals that is **not** turnkey: MTD VAT fil
 ERPNext does not file to HMRC out of the box. See [VAT and MTD](#vat-and-mtd) below —
 this is the one section with an open decision rather than a checklist.
 
+## Why self-hosted, not Frappe Cloud
+
+This got reconsidered properly, not skipped — worth recording so it isn't
+re-litigated without the reasons. **Frappe Cloud** (the official managed ERPNext
+SaaS, frappecloud.com) was researched as an alternative to the self-hosted plan
+below: no server, no Docker for anyone, sign up and go. It was set aside for cost
+and control reasons that held up under three separate rounds of checking, including
+reading Frappe Cloud's own source (`frappe/press`):
+
+- **The realistic price is $25/month, not free.** There's a 14-day trial, not a
+  free tier. Below $25/month, backups are **not downloadable at all** — no dashboard
+  pull, no API, nothing you can redirect anywhere. Offsite/downloadable backups are
+  gated to the $25+ tier specifically, and that's also the tier where you can
+  disable forced auto-updates. For a client where $25/month is the wrong side of
+  the budget for the parallel-run period, that tier isn't really on offer at any
+  price below it.
+- **Below $25/month, updates are forced with no opt-out** — confirmed directly in
+  Frappe Cloud's own code, which throws *"Auto updates can't be disabled for sites
+  on public benches"* if you try. For an accounting system mid-VAT-quarter, not
+  being able to defer a platform update during a reporting window is a real
+  operational risk self-hosting doesn't have.
+- **No uptime guarantee exists on the tier this client would buy.** Frappe's own
+  Terms of Service explicitly disclaim uninterrupted access; "limited uptime
+  guarantees" is listed as a dedicated-server feature, not a site-plan one.
+- **Offsite backups default to a Mumbai (India) AWS bucket, even for a UK-region
+  site** — unconfirmed whether that's redirectable, and exactly the kind of
+  question a client's accountant asks about financial data under GDPR.
+- **Support is India business hours**, and only exists contractually above
+  $50/month.
+
+None of this makes Frappe Cloud a bad product — it's a legitimate option, and the
+exit route is genuinely clean if it's ever revisited (a Frappe Cloud backup is an
+ordinary `bench` backup, importable straight into the self-hosted setup below with
+no migration tooling needed). It just isn't a better fit than self-hosting **for
+this client, at this budget, right now** — self-hosting is cheaper, gives full
+control over where backups go (§3) with no tier gate, and doesn't force updates
+onto a live ledger on someone else's schedule.
+
 ## Version caveat
 
 Everything below is written against **ERPNext v15**. Sidebar wording, menu paths and
@@ -154,15 +192,51 @@ under deadline pressure, and it's the one that makes every later step reversible
 - The install script in section 2 already composes a backup cron (default every 6
   hours, `-g/--backup-schedule` to change it) — a schedule exists from minute one.
   It backs up to a container volume **on the same box**, which is the part that
-  still needs doing: redirect the destination to off-instance storage —
-  S3-compatible object storage or equivalent. A server-level failure that takes out
-  the disk must not take out the backups too.
+  still needs doing: redirect the destination off-instance. A server-level failure
+  that takes out the disk must not take out the backups too.
 - **Test a restore before go-live, not after something breaks.** Spin up a second,
   disposable instance (or a local Docker Compose instance on a laptop) and restore
   the most recent backup into it. If this hasn't been done, "we have backups" is
   unverified.
-- Encryption at rest depends on the storage provider — most S3-compatible services
-  offer server-side encryption as a bucket setting; enable it.
+- Encryption at rest depends on the storage destination — most S3-compatible
+  services offer server-side encryption as a bucket setting; enable it. For a
+  destination without built-in encryption (OneDrive, below), encrypt the archive
+  before it leaves the server instead.
+
+**Destination: OneDrive, chosen over paid object storage because self-hosting was
+picked specifically to avoid a recurring cost tier — see
+[Why self-hosted, not Frappe Cloud](#why-self-hosted-not-frappe-cloud) above.
+`rclone` is the standard tool for this and has a mature OneDrive backend:**
+
+1. Install `rclone` on the server (`curl https://rclone.org/install.sh | sudo bash`
+   — ⚠ VERIFY this against rclone.org at install time, the standard installer
+   command has been stable for years but confirm rather than assume).
+2. `rclone config` → new remote → type `onedrive` → follow the OAuth prompt. This
+   needs a browser: either run the command on a machine with one and copy the
+   resulting token into the server's `rclone.conf`, or use `rclone authorize`
+   locally and paste its output back into the server-side config wizard — both are
+   documented in-tool. Use a dedicated Microsoft account or a folder scoped for
+   this purpose, not a personal OneDrive mixed in with other files.
+3. Point the backup cron's output at a local staging directory
+   (`~/erp-backups/pending/`), then add a second cron job that runs after the
+   backup window and does the actual push:
+   ```bash
+   rclone move ~/erp-backups/pending/ onedrive:erp-backups/ \
+     --min-age 10m
+   ```
+   `--min-age` avoids racing a backup still being written. ⚠ VERIFY the exact
+   `rclone move`/`sync` flags against `rclone --help` at setup time.
+4. **Encrypt before it leaves the server**, since OneDrive doesn't give you
+   server-side encryption the way an S3 bucket setting does: either `gpg --encrypt`
+   the archive in the staging directory before the `rclone move` step, or configure
+   an `rclone crypt` remote layered on top of the `onedrive` remote so encryption
+   happens transparently on every push. Either way, store the encryption key/
+   passphrase somewhere that isn't the server itself and isn't OneDrive — the
+   practice's password manager, not a file next to the backups it protects.
+5. **Test the restore path specifically through this destination**, not just from
+   local disk — pull a backup back down from OneDrive, decrypt it, and restore it
+   into a disposable instance. A backup that only proves it exists in
+   `~/erp-backups/pending/` hasn't proven the offsite copy is real or readable.
 
 ## 4. Initial site setup
 
