@@ -140,6 +140,17 @@ if `atrium-accounts` is refused. Live URLs are now
   Marked with ⚠ VERIFY wherever a claim needs checking against a live instance — nothing
   in it has been run against a real deployment yet. **Docker is now running on the
   server** — next is confirming DNS is pointed at it before the install script runs.
+- **Frappe Cloud (the official hosted ERPNext) was seriously evaluated and set aside** —
+  self-hosted stays the plan. Not skipped, properly checked (three research rounds,
+  including reading Frappe Cloud's own source): the realistic price is $25/month, not
+  free, because downloadable backups and the ability to disable forced auto-updates are
+  both gated to that tier and above — below it, updates land on Frappe's schedule with no
+  opt-out, and backups can't be pulled anywhere at all. On top of that, no uptime
+  guarantee exists at any site-plan tier, offsite backups default to a Mumbai bucket even
+  for a UK-region site (unconfirmed if redirectable), and support is India business
+  hours. Full reasoning in `ERPNEXT-DEPLOYMENT.md`'s "Why self-hosted, not Frappe Cloud".
+  Self-hosting is both cheaper and gives free control over backup destination — added
+  **OneDrive via `rclone`** as the documented backup target for exactly that reason.
 - **Walk help.html against the client's real ERPNext instance once it exists.** The steps
   deliberately say what to *search for* rather than which menu to click, because sidebar
   wording drifts between versions — but they should still be checked against real screens
