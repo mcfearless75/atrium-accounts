@@ -140,6 +140,10 @@ if `atrium-accounts` is refused. Live URLs are now
   Marked with ⚠ VERIFY wherever a claim needs checking against a live instance — nothing
   in it has been run against a real deployment yet. **Docker is now running on the
   server** — next is confirming DNS is pointed at it before the install script runs.
+  **ERPNext Bring-Up checklist** (`ERPNEXT-DEPLOYMENT.md` §1–3, turned into a working
+  checklist with persistent ticks — pin v15 vs v16, DNS, run the install, verify it, back
+  it up to OneDrive before any real data goes in):
+  https://claude.ai/code/artifact/e1b323df-83a3-4cd2-b050-87ee129932d0
 - **Frappe Cloud (the official hosted ERPNext) was seriously evaluated and set aside** —
   self-hosted stays the plan. Not skipped, properly checked (three research rounds,
   including reading Frappe Cloud's own source): the realistic price is $25/month, not
