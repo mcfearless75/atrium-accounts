@@ -3,6 +3,14 @@
 Working notes for the X-Ray app family and the Sage 50 → ERPNext migration project.
 Update this file at the end of any session that changes the plan or ships work.
 
+**PaulMc is handling the client-side decisions directly** — the Sage contract
+renewal/notice deadline, the year-end accountant's sign-off, the MTD filing route
+choice, and getting the client's actual Sage invoice. Don't chase these, ask about
+them, or re-list them as pending blockers in status summaries. They stay documented
+below (in the hard-deadline section and "Other open questions") for factual context
+only — update those notes if PaulMc reports something resolved, but don't surface
+them proactively.
+
 ## Client context
 
 - Client runs **Sage 50**, files **MTD VAT to HMRC from it**. **No payroll** in Sage.
