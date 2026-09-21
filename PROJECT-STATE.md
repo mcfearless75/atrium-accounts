@@ -3,6 +3,14 @@
 Working notes for the X-Ray app family and the Sage 50 → ERPNext migration project.
 Update this file at the end of any session that changes the plan or ships work.
 
+**PaulMc is handling the client-side decisions directly** — the Sage contract
+renewal/notice deadline, the year-end accountant's sign-off, the MTD filing route
+choice, and getting the client's actual Sage invoice. Don't chase these, ask about
+them, or re-list them as pending blockers in status summaries. They stay documented
+below (in the hard-deadline section and "Other open questions") for factual context
+only — update those notes if PaulMc reports something resolved, but don't surface
+them proactively.
+
 ## Client context
 
 - Client runs **Sage 50**, files **MTD VAT to HMRC from it**. **No payroll** in Sage.
@@ -181,7 +189,13 @@ if `atrium-accounts` is refused. Live URLs are now
 - ERPNext import column headers (both `migrate.html` and `bom.html`) are best-effort
   against v15 Data Import templates — **must be verified against the client's live
   instance in Phase 0** before bulk import.
-- PaulMc wants a local clone under `C:\Users\LAPTOP80\Projects` for backup.
+- **Local clone, so day-to-day use doesn't need a remote session running.** The apps
+  are zero-dependency static HTML with no build step — clone once
+  (`git clone https://github.com/mcfearless75/atrium-accounts.git C:\Users\LAPTOP80\Projects\atrium-accounts`)
+  and double-click any of `index.html` / `json.html` / `sage.html` / `migrate.html` /
+  `bom.html` / `help.html` to open it in a browser via `file://`. No server, no
+  `npm install`. A remote/Claude Code session is only needed for actually changing
+  code, reviewing PRs, or running `tests/*.test.mjs` — not for using the tools.
 - Remaining modules from the client's wish-list not yet built: invoicing, stock taking,
   inventory management. These are ERPNext modules rather than X-Ray tools — the X-Ray
   layer's job is quality assurance over them, not replacing them.
